@@ -8,6 +8,7 @@
 #include "fm_patch.h"
 #include "fm1_engine_control.h"
 #include "audio_output.h"
+#include "clock.h"
 #include "fm1_audio_io.h"
 #include <string.h>
 
@@ -206,6 +207,7 @@ EXPORT("sim_boot") void sim_boot(unsigned clear)
     midi_source = FM1_MIDI_USB; capture_read = capture_write = 0;
     now_ms = 0; frames = 0;
     master_adc = 0xffffU; output_level = 0;
+    clock_init();
     fm1_output_reset();
     radio_features = FM1_BT_AUDIO | FM1_BT_MIDI;
     radio_role = FM1_BLE_PERIPHERAL;

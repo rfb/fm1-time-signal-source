@@ -56,7 +56,8 @@ Panel: EDIT opens SET TIME with the current time, frozen. KNOB 1-3 turn
 hours, minutes and seconds (each wraps without carrying); KNOB 4 right
 selects UTC input, left local input (the entry converts, same instant).
 SAVE accepts: the clock is set to the entered time, at .000, at that
-moment, so dial a few seconds ahead and press on the beat. HOME cancels.
+moment, so dial a few seconds ahead and press on the beat. HOME cancels. EDIT stays lit
+while the clock is unset.
 
 ## Speech clips
 speech/clips.tsv lists the announcement vocabulary (English, whole numbers

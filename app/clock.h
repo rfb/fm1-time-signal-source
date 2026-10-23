@@ -19,6 +19,7 @@ struct clock_position {
 FM1_AUDIO_CODE void clock_block(struct clock_position *start);
 
 /* Control task. */
+void clock_init(void);  /* power-on state; for hosts that restart without reloading */
 struct clock_time {
     uint32_t second; /* UTC second of day */
     uint32_t ms;     /* milliseconds into it */

@@ -36,7 +36,7 @@ static uint16_t band[FM1_SCREEN_WIDTH * BAND_ROWS];
 static char shown[LINES][21];
 static uint16_t shown_color[LINES];
 static uint32_t last_ms, carry_ms, seconds, synced_at;
-static unsigned led_on, sync_count, previous_buttons, setting, input_utc;
+static unsigned led_on, edit_led, sync_count, previous_buttons, setting, input_utc;
 static uint32_t entered; /* SET TIME entry: second of day in the input zone */
 
 static const uint8_t *glyph(char c)
@@ -81,7 +81,7 @@ void groove_screen_init(void)
 {
     fm1_controls_init();
     for (unsigned key = 0; key < LEDS; ++key) fm1_led_set(key, 0);
-    led_on = setting = input_utc = 0;
+    led_on = edit_led = setting = input_utc = 0;
     fm1_screen_init();
     fm1_screen_fill(0, 0, FM1_SCREEN_WIDTH, FM1_SCREEN_HEIGHT, BACK);
     memset(shown, 0, sizeof shown);
@@ -176,6 +176,9 @@ void groove_screen_control(void)
             input_utc = utc;
         }
     }
+    /* EDIT stays lit while the clock is unset, prompting SET TIME. */
+    unsigned prompt = !setting && !time.set;
+    if (prompt != edit_led) { fm1_led_set(EDIT_BUTTON, (int)prompt); edit_led = prompt; }
     if (setting) {
         line(TITLE, "SET TIME", ACCENT);
         clock_text(text, entered);

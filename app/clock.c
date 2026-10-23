@@ -57,6 +57,17 @@ FM1_AUDIO_CODE void clock_block(struct clock_position *at)
     published_set = is_set;
     ++published_sequence;
 }
+void clock_init(void)
+{
+    second = frame = carry = 0;
+    rate = CLOCK_RATE_DEFAULT;
+    rate_whole = length = CLOCK_RATE_DEFAULT / 1000U;
+    rate_fraction = CLOCK_RATE_DEFAULT % 1000U;
+    is_set = published_set = 0;
+    set_applied = set_requests;
+    rate_applied = rate_requests;
+    (void)clock_offset_set(CLOCK_OFFSET_DEFAULT);
+}
 void clock_read(struct clock_time *now)
 {
     uint32_t sequence, s, f, n;
