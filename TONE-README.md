@@ -66,6 +66,25 @@ with Piper text-to-speech (en_US-john-medium, public-domain training data),
 records your own voice, processes clips to 8 kHz and renders a broadcast
 preview of the end of any minute. Generated audio stays under build/.
 
+## Speech bank and announcements (app/speech.c)
+    python3 -I tools/speech.py process
+    python3 -I tools/speech.py bank        # build/speech/bank.bin
+    python3 -I tools/station.py upload build/speech/bank.bin
+The bank (format in app/speech.h) holds the clips as 8 kHz 4-bit IMA ADPCM
+in the former sample region of user Flash (offset 69632, up to 466944
+bytes; the placeholder bank is 208 KB). Clips are found by name. Upload
+erases as it goes and commits only after a CRC check of the stored bank,
+so an interrupted or damaged upload never plays; the station is briefly
+silent while Flash is written, and the audio-clocked station clock pauses
+(about 3 s for 200 KB); `upload` re-syncs it afterwards when it was set.
+The audio ISR decodes from the mapped partition and resamples to the
+board rate.
+- "At the tone, H hour(s), M minute(s), Haida Standard Time." for the
+  next minute marker, starting at :52.5 every minute.
+- Station identification (VA7BFR) at :02.03 of minutes 00 and 30.
+Nothing is announced while the clock is unset. Speech pauses in the tick
+protected zones, like WWV.
+
 ## Station appliance
 The instrument UI, projects, presets, DX7 factory voices, voice library,
 sample bank, MIDI routing and workbench file transfers are removed. The SDK

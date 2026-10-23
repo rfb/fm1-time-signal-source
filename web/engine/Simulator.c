@@ -9,7 +9,9 @@
 #include "fm1_engine_control.h"
 #include "audio_output.h"
 #include "clock.h"
+#include "speech.h"
 #include "fm1_audio_io.h"
+#include "fm1_device.h"
 #include <string.h>
 
 #ifdef __wasm__
@@ -154,6 +156,10 @@ int fm1_flash_erase(uint32_t at)
     if (at % FM1_FLASH_SECTOR_BYTES || at > sizeof flash - FM1_FLASH_SECTOR_BYTES) return FM1_FLASH_INVALID;
     memset(flash + at, 255, FM1_FLASH_SECTOR_BYTES); ++flash_revision; return 0;
 }
+const uint8_t *fm1_flash_map(uint32_t at, size_t bytes)
+{ return at <= sizeof flash && bytes <= sizeof flash - at ? flash + at : NULL; }
+int fm1_flash_invalidate(uint32_t at, size_t bytes)
+{ return at <= sizeof flash && bytes <= sizeof flash - at ? 0 : FM1_FLASH_INVALID; }
 static unsigned midi_source = FM1_MIDI_USB;
 unsigned fm1_midi_input_source(void) { return midi_source; }
 /* Device replies, read back through sim_midi_output. */
@@ -327,4 +333,11 @@ EXPORT("sim_factory_size") unsigned sim_factory_size(void) { return 0; }
 EXPORT("sim_sample_alloc") int16_t *sim_sample_alloc(unsigned count) { (void)count; return NULL; }
 EXPORT("sim_sample_encode") const uint8_t *sim_sample_encode(void) { return NULL; }
 EXPORT("sim_sample_bytes") unsigned sim_sample_bytes(void) { return 0; }
-EXPORT("sim_sample_bank") int sim_sample_bank(unsigned bytes) { (void)bytes; return -1; }
+/* The page writes a bank file into the former sample region of flash. */
+EXPORT("sim_sample_bank") int sim_sample_bank(unsigned bytes)
+{
+    (void)bytes;
+    ++flash_revision;
+    speech_init();
+    return speech_state() == SPEECH_READY ? 0 : -1;
+}

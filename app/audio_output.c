@@ -3,6 +3,7 @@
 #include "fm1_engine_control.h"
 #include "fm1_audio_io.h"
 #include "clock.h"
+#include "speech.h"
 
 /* WWV-style schedule, in local minutes (the offset is whole minutes, so
  * seconds match UTC). Phase steps are 2^32 * Hz / 44118, the board rate;
@@ -41,6 +42,7 @@ static inline __attribute__((always_inline)) int32_t sine(uint32_t phase)
 }
 static int32_t usb_pcm[FM1_BLOCK_WORDS] __attribute__((aligned(32)));
 static int16_t bluetooth_pcm[FM1_BLOCK_WORDS] __attribute__((aligned(32)));
+static int16_t voice[FM1_BLOCK_FRAMES];
 
 /* Hours, minutes and seconds by subtraction: the audio path makes no
  * library calls, which would run from Flash. */
@@ -94,6 +96,7 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
     (void)fm1_bluetooth_audio_read(bluetooth_pcm, FM1_BLOCK_FRAMES);
     struct clock_position at;
     clock_block(&at);
+    speech_block(&at, voice);
     uint32_t frame = at.frame, length = at.length, local = at.local;
     plan_second(local);
     for (unsigned i = 0; i < FM1_BLOCK_FRAMES; ++i) {
@@ -104,17 +107,24 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
             plan_second(local);
         }
         if (!frame) phase = 0;
-        /* Ticks and markers about -12 dBFS, standard tones -18 dBFS, at full
-         * MASTER. Products fit int32_t. */
+        /* Ticks and markers about -12 dBFS, standard tones -18 dBFS, speech
+         * peaks near -1 dBFS (clips are levelled to -20 dBFS RMS), at full
+         * MASTER. Speech and tones never share a second, and both pause in
+         * the protected zones. Products fit int32_t. */
         int32_t sample = 0;
+        unsigned zone = (plan.zone_after && frame < ZONE_AFTER) ||
+                        (plan.zone_before && length - frame <= ZONE_BEFORE);
         if (plan.marker && frame < MARKER_FRAMES) {
             sample = (sine(phase) * (int32_t)output_gain) / 2;
             phase += plan.marker;
         } else if (plan.tick && frame < TICK_FRAMES) {
             sample = (sine(phase) * (int32_t)output_gain) / 2;
             phase += STEP_1000;
-        } else if (plan.tone && !(plan.zone_after && frame < ZONE_AFTER) &&
-                   !(plan.zone_before && length - frame <= ZONE_BEFORE)) {
+        } else if (zone) {
+            /* protected zone: silence */
+        } else if (voice[i]) {
+            sample = voice[i] * (int32_t)output_gain * 2;
+        } else if (plan.tone) {
             sample = (sine(phase) * (int32_t)output_gain) / 4;
             phase += plan.tone;
         }

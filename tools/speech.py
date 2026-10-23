@@ -10,15 +10,19 @@ build/speech/tts/<id>.wav (placeholders from `synth`).
     python3 -I tools/speech.py record --device default
     python3 -I tools/speech.py process
     python3 -I tools/speech.py preview 14:32
+    python3 -I tools/speech.py bank
     python3 -I tools/speech.py status
 
 `process` trims silence, matches loudness and resamples to the station's
 8 kHz mono 16-bit format in build/speech/clips/. `preview` renders the end
 of the minute before HH:MM as broadcast: standard tone, second ticks with
 their protected zones, the announcement at second 52.5 and the minute or
-hour marker. Requires numpy and scipy; `record` also needs arecord.
+hour marker. `bank` encodes the processed clips as the station's speech bank
+(app/speech.h) in build/speech/bank.bin, plus a reference rendering that
+tests/speech_host.c compares with the firmware player. Requires numpy and
+scipy; `record` also needs arecord.
 """
-import argparse, json, os, subprocess, sys
+import argparse, json, os, struct, subprocess, sys, zlib
 from math import gcd
 from pathlib import Path
 import numpy as np
@@ -221,6 +225,122 @@ def preview(args):
           + ('' if voice_end <= 59.9 else '  WARNING: runs into the minute marker'))
 
 
+# IMA ADPCM, mirroring app/speech.c exactly.
+IMA_STEPS = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+             50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+             253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+             1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+             3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+             11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767]
+IMA_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8]
+BANK_RATE, BOARD_RATE = 8000, 44118
+RESAMPLE_STEP = round(BANK_RATE * 2 ** 32 / BOARD_RATE)
+
+
+def ima_step(predictor, index, n):
+    step = IMA_STEPS[index]
+    diff = step >> 3
+    if n & 4: diff += step
+    if n & 2: diff += step >> 1
+    if n & 1: diff += step >> 2
+    predictor = max(-32768, min(32767, predictor - diff if n & 8 else predictor + diff))
+    return predictor, max(0, min(88, index + IMA_INDEX[n & 7]))
+
+
+def ima_encode(samples):
+    predictor, index, nibbles = 0, 0, []
+    for x in samples:
+        step, diff, n = IMA_STEPS[index], int(x) - predictor, 0
+        if diff < 0: n, diff = 8, -diff
+        for bit, threshold in ((4, step), (2, step >> 1), (1, step >> 2)):
+            if diff >= threshold:
+                n |= bit
+                diff -= threshold
+        nibbles.append(n)
+        predictor, index = ima_step(predictor, index, n)
+    if len(nibbles) % 2:
+        nibbles.append(0)
+    return bytes(nibbles[i] | nibbles[i + 1] << 4 for i in range(0, len(nibbles), 2))
+
+
+def bank_clip_ids():
+    return [c['id'] for c in clips()]
+
+
+def build_bank():
+    entries, payload = [], b''
+    ids = bank_clip_ids()
+    if any(len(i) > 12 for i in ids):
+        sys.exit('error: clip ids must be at most 12 characters')
+    base = 32 + 24 * len(ids)
+    for clip_id in ids:
+        path = CLIPS / f'{clip_id}.wav'
+        if not path.is_file():
+            sys.exit(f'error: {path} missing; run process first')
+        rate, x = wavfile.read(path)
+        if rate != BANK_RATE or x.dtype != np.int16:
+            sys.exit(f'error: {path} is not {BANK_RATE} Hz 16-bit; run process')
+        data = ima_encode(x)
+        entries.append((clip_id, base + len(payload), len(x)))
+        payload += data
+    directory = b''.join(struct.pack('<12sIIhBB', i.encode(), offset, samples, 0, 0, 0)
+                         for i, offset, samples in entries)
+    body = struct.pack('<IH10x', 32 + len(directory) + len(payload), len(ids)) + directory + payload
+    header = b'HSTS' + struct.pack('<BBHI', 1, 1, BANK_RATE, 0) + struct.pack('<I', zlib.crc32(body))
+    return header + body
+
+
+def render(bank, playlist):
+    """Board-rate samples for [(clip id, gap frames)], as speech_block plays them."""
+    count = struct.unpack_from('<H', bank, 20)[0]
+    directory = {}
+    for i in range(count):
+        name, offset, samples, predictor, index, _ = struct.unpack_from('<12sIIhBB', bank, 32 + 24 * i)
+        directory[name.rstrip(b'\0').decode()] = (offset, samples, predictor, index)
+    out = []
+    for clip_id, gap in playlist:
+        offset, remaining, predictor, index = directory[clip_id]
+        previous = current = predictor
+        fraction, position, high = 0, offset, 0
+        while True:
+            before = fraction
+            fraction = (fraction + RESAMPLE_STEP) & 0xffffffff
+            if fraction < before:
+                previous = current
+                if not remaining:
+                    out.extend([0] * (gap + 1))
+                    break
+                remaining -= 1
+                byte = bank[position]
+                n = byte >> 4 if high else byte & 15
+                position += high
+                high ^= 1
+                predictor, index = ima_step(predictor, index, n)
+                current = predictor
+            out.append(previous + (((current - previous) * (fraction >> 18)) >> 14))
+    return np.array(out, dtype=np.int16)
+
+
+def gap_frames(ms):
+    return ms * BOARD_RATE // 1000
+
+
+def bank(args):
+    data = build_bank()
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / 'bank.bin').write_bytes(data)
+    if len(data) > 466944:
+        sys.exit(f'error: bank is {len(data)} bytes; the limit is 466944')
+    # Reference: the announcement armed at 14:31:52.5 local, for 14:32.
+    playlist = [('at_the_tone', gap_frames(250)), ('n14', gap_frames(60)), ('hours', gap_frames(200)),
+                ('n32', gap_frames(60)), ('minutes', gap_frames(200)), ('zone', 0)]
+    reference = render(data, playlist)
+    (OUT / 'bank_reference_1432.raw').write_bytes(reference.tobytes())
+    print(f'{OUT / "bank.bin"}: {len(data)} bytes, {len(bank_clip_ids())} clips '
+          f'({len(data) / 466944:.0%} of the speech region)')
+    print(f'  reference announcement: {len(reference) / BOARD_RATE:.2f} s')
+
+
 def status(args):
     durations = []
     for clip in clips():
@@ -254,11 +374,13 @@ def main():
     commands.add_parser('process', help='trim, level and resample clips to 8 kHz')
     p = commands.add_parser('preview', help='render the end of the minute before HH:MM')
     p.add_argument('time')
+    commands.add_parser('bank', help='encode processed clips as the station speech bank')
     commands.add_parser('status', help='list clips and their sources')
     args = parser.parse_args()
     if args.command == 'synth' and (not args.piper or not args.voice_dir):
         sys.exit('error: set --piper and --voice-dir (or FM1_PIPER_PYTHON and FM1_PIPER_VOICES)')
-    {'synth': synth, 'record': record, 'process': process, 'preview': preview, 'status': status}[args.command](args)
+    {'synth': synth, 'record': record, 'process': process, 'preview': preview, 'bank': bank,
+     'status': status}[args.command](args)
 
 
 if __name__ == '__main__':

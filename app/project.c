@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
-/* The station keeps no projects, voice library or sample bank. The SDK
- * engine still calls these entry points; they leave user Flash untouched. */
+/* The station keeps no projects or voice library; the sample bank entry
+ * points drive the speech bank (app/speech.c). */
 #include "instrument.h"
 #include "fm_patch.h"
+#include "speech.h"
 #include <string.h>
 
 static struct groove_project scratch;
@@ -34,5 +35,6 @@ FM1_DSP_CODE void groove_fm_program(uint8_t p[156], unsigned program)
     for (unsigned i = 0; i < 156; ++i) ((volatile uint8_t *)p)[i] = 0;
 }
 
-void groove_samples_init(void) {}
-void groove_samples_poll(void) {}
+/* The former sample bank region holds the speech bank. */
+void groove_samples_init(void) { speech_init(); }
+void groove_samples_poll(void) { speech_poll(); }

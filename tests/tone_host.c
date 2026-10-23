@@ -11,6 +11,13 @@ int fm1_usb_audio_read(int32_t *p, unsigned n, uint16_t g[2])
 int fm1_bluetooth_audio_read(int16_t *p, unsigned n)
 { for(unsigned i=0;i<n*2;i++) p[i]=32767; return n; }
 int fm1_usb_audio_write(const int32_t *p, unsigned n) { (void)p; return n; }
+/* No user Flash: the speech player stays silent. */
+uint32_t fm1_flash_size(void) { return 0; }
+int fm1_flash_read(uint32_t a, void *d, size_t n) { (void)a; (void)d; (void)n; return -1; }
+int fm1_flash_write(uint32_t a, const void *d, size_t n) { (void)a; (void)d; (void)n; return -1; }
+int fm1_flash_erase(uint32_t a) { (void)a; return -1; }
+const uint8_t *fm1_flash_map(uint32_t a, size_t n) { (void)a; (void)n; return NULL; }
+int fm1_flash_invalidate(uint32_t a, size_t n) { (void)a; (void)n; return -1; }
 
 /* Independent model of the clock after clock_set: seconds of 44117 or 44118 frames. */
 enum { SECONDS = 195, MAX_FRAMES = SECONDS * 44119 };
