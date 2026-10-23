@@ -9,10 +9,14 @@ enum { CLOCK_DAY = 86400 };
 #define CLOCK_RATE_DEFAULT 44117660U /* millihertz; measured 2026-10-23 */
 #define CLOCK_OFFSET_DEFAULT (-528)  /* minutes: Haida Standard Time is UTC-08:48 */
 
-/* Audio ISR, once per block before rendering it. Returns the UTC second at
- * the block's first frame in *second, and the index of the first frame of
- * the next second within this block, or FM1_BLOCK_FRAMES if there is none. */
-FM1_AUDIO_CODE unsigned clock_block(uint32_t *second);
+/* Position of a block's first frame. A block crosses at most one second:
+ * when frame reaches length, the next second lasts next_length frames. */
+struct clock_position {
+    uint32_t utc, local;  /* seconds of day */
+    uint32_t frame, length, next_length;
+};
+/* Audio ISR, once per block before rendering it; advances the clock. */
+FM1_AUDIO_CODE void clock_block(struct clock_position *start);
 
 /* Control task. */
 struct clock_time {

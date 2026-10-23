@@ -30,7 +30,21 @@ computer synchronization.
 app/clock.c keeps UTC time of day by counting audio frames at a calibrated
 rate (default 44117.66 Hz), so seconds start on frame boundaries; the audio
 ISR uses no division or 64-bit arithmetic. Haida Standard Time is
-UTC-08:48 (default offset). The test tone now plays during even UTC seconds.
+UTC-08:48 (default offset).
+
+## Broadcast schedule (app/audio_output.c)
+WWV-style, in local minutes; seconds match UTC because the offset is whole
+minutes. Levels are before MASTER.
+- Minute marker: 1000 Hz, 800 ms at :00, then 200 ms silence; at local
+  minute 0 the hour marker is 1500 Hz. About -12 dBFS.
+- Ticks: 1000 Hz, 5 ms (five cycles) at every other second except :29 and
+  :59. About -12 dBFS.
+- Protected zones: silence from 10 ms before to 30 ms after every tick or
+  marker.
+- Standard tones, seconds 1-44: 600 Hz odd minutes, 500 Hz even minutes,
+  440 Hz minute 2; none in minutes 0, 3, 29, 30, 43-51 and 59. About
+  -18 dBFS. tools/speech.py preview renders the same schedule.
+PLAY lights while a standard tone or marker sounds.
 Time starts unset at 00:00:00 UTC on power-on (no battery-backed clock);
 offset and rate are not saved yet. Set them from an NTP-synchronized host:
     python3 -I tools/station.py sync --offset -8:48 --rate 44117.66

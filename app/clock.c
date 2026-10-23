@@ -14,11 +14,12 @@ static volatile unsigned published_set;
 static volatile uint32_t request_second, request_frame, request_whole, request_fraction;
 static volatile unsigned set_requests, rate_requests;
 static unsigned set_applied, rate_applied;
-/* Control-only settings. */
+/* Control-only settings; the ISR reads the offset in seconds. */
 static uint32_t rate = CLOCK_RATE_DEFAULT;
 static int offset = CLOCK_OFFSET_DEFAULT;
+static volatile int32_t offset_seconds = CLOCK_OFFSET_DEFAULT * 60;
 
-FM1_AUDIO_CODE unsigned clock_block(uint32_t *at)
+FM1_AUDIO_CODE void clock_block(struct clock_position *at)
 {
     if (rate_applied != rate_requests) {
         rate_applied = rate_requests;
@@ -34,16 +35,20 @@ FM1_AUDIO_CODE unsigned clock_block(uint32_t *at)
         if (frame >= length) frame = length - 1;
         is_set = 1;
     }
-    *at = second;
-    uint32_t left = length - frame;
-    unsigned boundary = left < FM1_BLOCK_FRAMES ? (unsigned)left : FM1_BLOCK_FRAMES;
+    uint32_t next = rate_whole, next_carry = carry + rate_fraction;
+    if (next_carry >= 1000U) { next_carry -= 1000U; ++next; }
+    int32_t local = (int32_t)second + offset_seconds;
+    at->utc = second;
+    at->local = (uint32_t)(local < 0 ? local + CLOCK_DAY : local >= CLOCK_DAY ? local - CLOCK_DAY : local);
+    at->frame = frame;
+    at->length = length;
+    at->next_length = next;
     frame += FM1_BLOCK_FRAMES;
     if (frame >= length) {
         frame -= length;
         second = second + 1U == CLOCK_DAY ? 0 : second + 1U;
-        carry += rate_fraction;
-        length = rate_whole;
-        if (carry >= 1000U) { carry -= 1000U; ++length; }
+        carry = next_carry;
+        length = next;
     }
     ++published_sequence;
     published_second = second;
@@ -51,7 +56,6 @@ FM1_AUDIO_CODE unsigned clock_block(uint32_t *at)
     published_length = length;
     published_set = is_set;
     ++published_sequence;
-    return boundary;
 }
 void clock_read(struct clock_time *now)
 {
@@ -91,6 +95,7 @@ int clock_offset_set(int minutes)
 {
     if (minutes < -720 || minutes > 840) return -1;
     offset = minutes;
+    offset_seconds = minutes * 60;
     return 0;
 }
 int clock_offset(void) { return offset; }

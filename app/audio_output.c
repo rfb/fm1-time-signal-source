@@ -4,8 +4,20 @@
 #include "fm1_audio_io.h"
 #include "clock.h"
 
-/* 1 kHz at the board's 44118 Hz; the measured rate gives 999.99 Hz. */
-#define TONE_STEP 97351813U
+/* WWV-style schedule, in local minutes (the offset is whole minutes, so
+ * seconds match UTC). Phase steps are 2^32 * Hz / 44118, the board rate;
+ * the measured rate puts every tone within 10 ppm. Durations in frames. */
+enum {
+    STEP_440 = 42834798, STEP_500 = 48675907, STEP_600 = 58411088,
+    STEP_1000 = 97351813, STEP_1500 = 146027720,
+    TICK_FRAMES = 221,      /* 5 ms: five cycles of 1000 Hz */
+    MARKER_FRAMES = 35294,  /* 800 ms minute/hour marker */
+    ZONE_BEFORE = 441,      /* protected zone: 10 ms before a tick */
+    ZONE_AFTER = 1324,      /* and 30 ms after it */
+    TONE_LAST_SECOND = 44   /* standard tones in seconds 1..44 */
+};
+struct second_plan { uint32_t marker, tone; unsigned tick, zone_after, zone_before; };
+static struct second_plan plan;
 static uint32_t phase;
 static unsigned output_gain;
 static volatile unsigned tone_on;
@@ -30,6 +42,37 @@ static inline __attribute__((always_inline)) int32_t sine(uint32_t phase)
 static int32_t usb_pcm[FM1_BLOCK_WORDS] __attribute__((aligned(32)));
 static int16_t bluetooth_pcm[FM1_BLOCK_WORDS] __attribute__((aligned(32)));
 
+/* Hours, minutes and seconds by subtraction: the audio path makes no
+ * library calls, which would run from Flash. */
+static inline __attribute__((always_inline)) void split(uint32_t second, unsigned *minute, unsigned *in_minute)
+{
+    while (second >= 3600U) second -= 3600U;
+    unsigned m = 0;
+    while (second >= 60U) { second -= 60U; ++m; }
+    *minute = m;
+    *in_minute = second;
+}
+/* Standard tone for seconds 1..44 of a local minute; 0 for none. */
+static inline __attribute__((always_inline)) uint32_t standard_tone(unsigned minute)
+{
+    if (minute == 0 || minute == 3 || minute == 29 || minute == 30 || minute == 59 ||
+        (minute >= 43 && minute <= 51))
+        return 0;
+    if (minute == 2) return STEP_440;
+    return minute & 1U ? STEP_600 : STEP_500;
+}
+/* What a local second of day carries. */
+static inline __attribute__((always_inline)) void plan_second(uint32_t local)
+{
+    unsigned minute, second;
+    split(local, &minute, &second);
+    plan.marker = second ? 0 : minute ? STEP_1000 : STEP_1500;
+    plan.tick = second && second != 29 && second != 59;
+    plan.zone_after = plan.tick;
+    plan.zone_before = second != 28 && second != 58; /* next second starts with a tick or marker */
+    plan.tone = second >= 1 && second <= TONE_LAST_SECOND ? standard_tone(minute) : 0;
+}
+
 /* The station clock keeps running; only the output ramps up again. */
 void fm1_output_reset(void)
 {
@@ -49,22 +92,35 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
     uint16_t gains[2];
     (void)fm1_usb_audio_read(usb_pcm, FM1_BLOCK_FRAMES, gains);
     (void)fm1_bluetooth_audio_read(bluetooth_pcm, FM1_BLOCK_FRAMES);
-    /* Test tone during even UTC seconds, starting at phase 0 on the second. */
-    uint32_t second;
-    unsigned boundary = clock_block(&second);
+    struct clock_position at;
+    clock_block(&at);
+    uint32_t frame = at.frame, length = at.length, local = at.local;
+    plan_second(local);
     for (unsigned i = 0; i < FM1_BLOCK_FRAMES; ++i) {
-        if (i == boundary) {
-            second = second + 1U == CLOCK_DAY ? 0 : second + 1U;
-            phase = 0;
+        if (frame == length) {
+            frame = 0;
+            length = at.next_length;
+            local = local + 1U == CLOCK_DAY ? 0 : local + 1U;
+            plan_second(local);
         }
+        if (!frame) phase = 0;
+        /* Ticks and markers about -12 dBFS, standard tones -18 dBFS, at full
+         * MASTER. Products fit int32_t. */
         int32_t sample = 0;
-        if (!(second & 1U)) {
-            /* About -18 dBFS peak at full master gain. Product fits int32_t. */
+        if (plan.marker && frame < MARKER_FRAMES) {
+            sample = (sine(phase) * (int32_t)output_gain) / 2;
+            phase += plan.marker;
+        } else if (plan.tick && frame < TICK_FRAMES) {
+            sample = (sine(phase) * (int32_t)output_gain) / 2;
+            phase += STEP_1000;
+        } else if (plan.tone && !(plan.zone_after && frame < ZONE_AFTER) &&
+                   !(plan.zone_before && length - frame <= ZONE_BEFORE)) {
             sample = (sine(phase) * (int32_t)output_gain) / 4;
-            phase += TONE_STEP;
+            phase += plan.tone;
         }
         output[2*i] = output[2*i+1] = sample;
+        ++frame;
     }
-    tone_on = !(second & 1U);
+    tone_on = plan.tone || (plan.marker && frame < MARKER_FRAMES);
     (void)fm1_usb_audio_write(output, FM1_BLOCK_FRAMES);
 }
