@@ -14,6 +14,25 @@ Bluetooth audio are excluded from output. USB recording receives the test signal
 MASTER sets the output level. Flash operations may silence output and restart
 the tone cycle.
 
+## Measured timing (2026-10-23, one FM1, room temperature)
+tools/measure_usb_tone.py captures the USB recording stream (asynchronous, so
+the device clock sets the frame count) against the NTP-synchronized host:
+- 2 s cycle: 2000.0154 ms, i.e. the audio clock is 7.7 ppm slow (about
+  0.66 s/day); actual frame rate about 44117.66 Hz, not 44118.
+- Tone on: 1000.008 ms; tone frequency 999.995 Hz.
+- USB recording is resampled from the ~44118 Hz board rate to 44100 Hz;
+  timing is preserved, the waveform carries small resampling artifacts.
+Precision is limited by the host clock (about 1 ppm). Crystal temperature
+drift remains, so the station clock needs a calibrated rate and periodic
+computer synchronization.
+
+## Speech clips
+speech/clips.tsv lists the announcement vocabulary (English, whole numbers
+0-59, station ID for VA7BFR). tools/speech.py generates placeholder clips
+with Piper text-to-speech (en_US-john-medium, public-domain training data),
+records your own voice, processes clips to 8 kHz and renders a broadcast
+preview of the end of any minute. Generated audio stays under build/.
+
 ## Station appliance
 The instrument UI, projects, presets, DX7 factory voices, voice library,
 sample bank, MIDI routing and workbench file transfers are removed. The SDK
