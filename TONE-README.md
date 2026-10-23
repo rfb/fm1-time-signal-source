@@ -26,6 +26,24 @@ Precision is limited by the host clock (about 1 ppm). Crystal temperature
 drift remains, so the station clock needs a calibrated rate and periodic
 computer synchronization.
 
+## Station clock
+app/clock.c keeps UTC time of day by counting audio frames at a calibrated
+rate (default 44117.66 Hz), so seconds start on frame boundaries; the audio
+ISR uses no division or 64-bit arithmetic. Haida Standard Time is
+UTC-08:48 (default offset). The test tone now plays during even UTC seconds.
+Time starts unset at 00:00:00 UTC on power-on (no battery-backed clock);
+offset and rate are not saved yet. Set them from an NTP-synchronized host:
+    python3 -I tools/station.py sync --offset -8:48 --rate 44117.66
+    python3 -I tools/station.py query
+Protocol (USB MIDI SysEx, F0 7D 'T' 'S' 01 ...) is documented in app/transfer.c.
+USB/MIDI latency is not yet calibrated (sync --latency-ms).
+
+Panel: EDIT opens SET TIME with the current time, frozen. KNOB 1-3 turn
+hours, minutes and seconds (each wraps without carrying); KNOB 4 right
+selects UTC input, left local input (the entry converts, same instant).
+SAVE accepts: the clock is set to the entered time, at .000, at that
+moment, so dial a few seconds ahead and press on the beat. HOME cancels.
+
 ## Speech clips
 speech/clips.tsv lists the announcement vocabulary (English, whole numbers
 0-59, station ID for VA7BFR). tools/speech.py generates placeholder clips

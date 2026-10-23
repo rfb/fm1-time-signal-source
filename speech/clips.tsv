@@ -1,12 +1,13 @@
 # Station speech clips. id<TAB>text<TAB>say (pronunciation for text-to-speech; blank = text).
 # Edit text freely; ids are used by the announcement scheduler.
+# "Hyda" makes espeak say Haida as HY-duh (it reads "Haida" as HAY-duh).
 at_the_tone	At the tone,
 hour	hour,
 hours	hours,
 minute	minute,
 minutes	minutes,
-zone	Haida Standard Time.
-station_id	This is amateur radio station VA7BFR, transmitting Haida Standard Time.	This is amateur radio station, V A 7, B F R, transmitting Haida Standard Time.
+zone	Haida Standard Time.	Hyda Standard Time.
+station_id	This is amateur radio station VA7BFR, transmitting Haida Standard Time.	This is amateur radio station, V A 7, B F R, transmitting Hyda Standard Time.
 n00	zero
 n01	one
 n02	two

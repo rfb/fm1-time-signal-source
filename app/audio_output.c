@@ -2,13 +2,14 @@
 #include "audio_output.h"
 #include "fm1_engine_control.h"
 #include "fm1_audio_io.h"
+#include "clock.h"
 
-/* Timing assumes the board driver's declared 44118 Hz; verify on hardware. */
-#define TONE_RATE 44118U
+/* 1 kHz at the board's 44118 Hz; the measured rate gives 999.99 Hz. */
 #define TONE_STEP 97351813U
-static uint32_t phase, frame;
+static uint32_t phase;
 static unsigned output_gain;
-/* Quarter sine, 0..90 degrees; a full table would not fit the image. */
+static volatile unsigned tone_on;
+/* Quarter sine, 0..90 degrees: a quarter of the audio SRAM of a full table. */
 static const int16_t quarter_sine[65] FM1_AUDIO_DATA = {
     0, 804, 1608, 2410, 3212, 4011, 4808, 5602,
     6393, 7179, 7962, 8739, 9512, 10278, 11039, 11793,
@@ -29,12 +30,13 @@ static inline __attribute__((always_inline)) int32_t sine(uint32_t phase)
 static int32_t usb_pcm[FM1_BLOCK_WORDS] __attribute__((aligned(32)));
 static int16_t bluetooth_pcm[FM1_BLOCK_WORDS] __attribute__((aligned(32)));
 
+/* The station clock keeps running; only the output ramps up again. */
 void fm1_output_reset(void)
 {
     output_gain = 0;
-    phase = frame = 0;
+    phase = 0;
 }
-unsigned fm1_output_tone(void) { return frame < TONE_RATE; }
+unsigned fm1_output_tone(void) { return tone_on; }
 FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
 {
     if (!output) return;
@@ -47,15 +49,22 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
     uint16_t gains[2];
     (void)fm1_usb_audio_read(usb_pcm, FM1_BLOCK_FRAMES, gains);
     (void)fm1_bluetooth_audio_read(bluetooth_pcm, FM1_BLOCK_FRAMES);
+    /* Test tone during even UTC seconds, starting at phase 0 on the second. */
+    uint32_t second;
+    unsigned boundary = clock_block(&second);
     for (unsigned i = 0; i < FM1_BLOCK_FRAMES; ++i) {
+        if (i == boundary) {
+            second = second + 1U == CLOCK_DAY ? 0 : second + 1U;
+            phase = 0;
+        }
         int32_t sample = 0;
-        if (frame < TONE_RATE) {
+        if (!(second & 1U)) {
             /* About -18 dBFS peak at full master gain. Product fits int32_t. */
             sample = (sine(phase) * (int32_t)output_gain) / 4;
             phase += TONE_STEP;
         }
         output[2*i] = output[2*i+1] = sample;
-        if (++frame == 2U * TONE_RATE) { frame = 0; phase = 0; }
     }
+    tone_on = !(second & 1U);
     (void)fm1_usb_audio_write(output, FM1_BLOCK_FRAMES);
 }

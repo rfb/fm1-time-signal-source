@@ -155,6 +155,18 @@ int fm1_flash_erase(uint32_t at)
 }
 static unsigned midi_source = FM1_MIDI_USB;
 unsigned fm1_midi_input_source(void) { return midi_source; }
+/* Device replies, read back through sim_midi_output. */
+static struct { uint8_t port, bytes, data[128]; } midi_capture[16];
+static unsigned capture_read, capture_write;
+int fm1_midi_send_port(unsigned port, const uint8_t *data, size_t bytes)
+{
+    if (port >= 3 || !data || !bytes || bytes > 128) return -1;
+    if (capture_write - capture_read == 16) return -2;
+    unsigned at = capture_write++ & 15U;
+    midi_capture[at].port = (uint8_t)port; midi_capture[at].bytes = (uint8_t)bytes;
+    memcpy(midi_capture[at].data, data, bytes);
+    return 0;
+}
 /* The browser has no hardware streams; the same APP output stage still runs. */
 int fm1_usb_audio_read(int32_t *pcm, unsigned count, uint16_t gains[2])
 {
@@ -191,7 +203,7 @@ EXPORT("sim_boot") void sim_boot(unsigned clear)
     if (clear & 1U) { memset(flash, 255, sizeof flash); ++flash_revision; }
     memset(&controls, 0, sizeof controls); controls.battery = 900; controls.knob = 1023;
     memset(leds, 0, sizeof leds); memset(previous, 0, sizeof previous);
-    midi_source = FM1_MIDI_USB;
+    midi_source = FM1_MIDI_USB; capture_read = capture_write = 0;
     now_ms = 0; frames = 0;
     master_adc = 0xffffU; output_level = 0;
     fm1_output_reset();
@@ -286,7 +298,14 @@ EXPORT("sim_count_in") unsigned sim_count_in(void) { return 0; }
 EXPORT("sim_arp") unsigned sim_arp(unsigned track) { (void)track; return 255; }
 EXPORT("sim_midi_capture") void sim_midi_capture(unsigned enable) { (void)enable; }
 EXPORT("sim_midi_ports") void sim_midi_ports(unsigned ready, unsigned busy) { (void)ready; (void)busy; }
-EXPORT("sim_midi_output") unsigned sim_midi_output(void) { return 0; }
+/* Encoded result: port in bits 8..9, byte count in bits 0..7; data in sim_file. */
+EXPORT("sim_midi_output") unsigned sim_midi_output(void)
+{
+    if (capture_read == capture_write) return 0;
+    unsigned at = capture_read++ & 15U, n = midi_capture[at].bytes;
+    memcpy(file_buffer, midi_capture[at].data, n);
+    return n | (unsigned)midi_capture[at].port << 8;
+}
 EXPORT("sim_midi_setting") unsigned sim_midi_setting(unsigned track, unsigned parameter)
 { (void)track; (void)parameter; return 0; }
 EXPORT("sim_midi_edit") void sim_midi_edit(unsigned track, unsigned parameter, int delta)
