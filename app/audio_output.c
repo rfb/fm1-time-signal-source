@@ -34,6 +34,7 @@ void fm1_output_reset(void)
     output_gain = 0;
     phase = frame = 0;
 }
+unsigned fm1_output_tone(void) { return frame < TONE_RATE; }
 FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
 {
     if (!output) return;

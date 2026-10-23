@@ -524,7 +524,7 @@ def build_simulator(wasi_sdk):
     if not (ROOT / 'web' / 'engine' / 'Simulator.c').is_file():
         fail('Missing browser sources. Download the complete source tree.')
     inputs = {}
-    for base in ('app', 'web', 'third_party/synth'):
+    for base in ('app', 'web'):
         for path in visible_files(ROOT / base):
             name = path.relative_to(ROOT).as_posix()
             if not name.startswith('app/board/') and path.suffix in ('.c', '.h', '.inc'):
@@ -540,7 +540,7 @@ def build_simulator(wasi_sdk):
     options = ['--sysroot=' + str(sysroot), '-std=c11', '-O2', '-fwrapv', '-fno-fast-math', '-ffp-contract=off',
                '-DFM1_HOST_TEST', '-DFM1_OPEN_WEB', '-Wall', '-Wextra', '-Werror',
                '-Wno-unused-function', '-Wno-array-parameter', '-mexec-model=reactor']
-    options += ['-I' + str(ROOT / n) for n in ('web/engine', 'web/synth', 'third_party/synth', 'sdk/include', 'app/synth', 'app')]
+    options += ['-I' + str(ROOT / n) for n in ('web/engine', 'sdk/include', 'app/synth', 'app')]
     options += [str(ROOT / n) for n in names if n.endswith('.c') and not n.startswith('sdk/')]
     options += ['-Wl,--strip-all', '-Wl,-z,stack-size=131072', '-Wl,--initial-memory=4194304',
                 '-Wl,--max-memory=33554432', '-o', str(wasm)]

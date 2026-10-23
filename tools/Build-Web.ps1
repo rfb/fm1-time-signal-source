@@ -26,7 +26,7 @@ function Build-Simulator {
         throw 'Missing browser sources. Download the complete source tree.'
     }
     $inputs = @{}
-    foreach ($file in Get-ChildItem -LiteralPath @((Join-Path $root 'app'), (Join-Path $root 'web'), (Join-Path $root 'third_party/synth')) -Recurse -File) {
+    foreach ($file in Get-ChildItem -LiteralPath @((Join-Path $root 'app'), (Join-Path $root 'web')) -Recurse -File) {
         $name = $file.FullName.Substring($root.Length+1).Replace('\','/')
         if (!$name.StartsWith('app/board/') -and $file.Extension -cin @('.c','.h','.inc')) { $inputs[$name] = Hash $file.FullName }
     }
@@ -79,7 +79,7 @@ function Build-Simulator {
         '-std=c11','-O2','-fwrapv','-fno-fast-math','-ffp-contract=off',
         '-DFM1_HOST_TEST','-DFM1_OPEN_WEB','-Wall','-Wextra','-Werror',
         '-Wno-unused-function','-Wno-array-parameter','-mexec-model=reactor')
-    foreach ($name in @('web/engine','web/synth','third_party/synth','sdk/include','app/synth','app')) { $options += '-I' + (Join-Path $root $name) }
+    foreach ($name in @('web/engine','sdk/include','app/synth','app')) { $options += '-I' + (Join-Path $root $name) }
     foreach ($name in $names) { if ($name.EndsWith('.c') -and !$name.StartsWith('sdk/')) { $options += Join-Path $root $name } }
     $options += @('-Wl,--strip-all','-Wl,-z,stack-size=131072','-Wl,--initial-memory=4194304','-Wl,--max-memory=33554432','-o',$wasm)
     Write-Host 'Compile the browser application'

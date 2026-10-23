@@ -1,7 +1,9 @@
-# FM1 1 kHz tone test
+# FM1 time-signal station
 Status: host checks pass. Firmware builds with JieLi's Linux toolchain and
-passes all upstream image checks. Flashed to an FM1 and working (2026-10-23).
-Frequency and on/off timing not yet measured. Not built with Windows 2.5.3.
+passes all upstream image checks. The tone build (instrument UI retained) was
+flashed and worked on 2026-10-23; the station appliance build below was
+flashed the same day. Frequency and on/off timing not yet measured. Not built with
+Windows 2.5.3.
 
 Based on m-vave/fm1_open commit 4c7496daac04a95ff10d1afdcc8f9ead2dbabc41.
 
@@ -9,9 +11,25 @@ Based on m-vave/fm1_open commit 4c7496daac04a95ff10d1afdcc8f9ead2dbabc41.
 Automatic 1 kHz sine, one second on, one second silent, repeating on both channels.
 Peak approximately -18 dBFS before existing master gain. Incoming synth, USB and
 Bluetooth audio are excluded from output. USB recording receives the test signal.
-The stock instrument UI and engine still run. Master gain follows existing panel
-behavior; this is a small output replacement, not a stripped-down clock firmware.
-Flash operations may silence output and restart the tone cycle.
+MASTER sets the output level. Flash operations may silence output and restart
+the tone cycle.
+
+## Station appliance
+The instrument UI, projects, presets, DX7 factory voices, voice library,
+sample bank, MIDI routing and workbench file transfers are removed. The SDK
+engine still runs and calls the app entry points; they are inert:
+- app/screen.c: status display (tone state, uptime, MASTER level, audio
+  overruns), MASTER knob, PLAY LED lit during the tone.
+- app/transfer.c: application SysEx hook, ignored for now; computer time
+  setting will arrive here. Firmware updates are handled by the SDK first.
+- app/midi_router.c: sends no MIDI. app/project.c: no storage; turns
+  Bluetooth off; keeps BLE and engine services the build checks require
+  linked (retained table, not called).
+User Flash is not read or written. The workbench "Projects & sounds" tab no
+longer has a device protocol to talk to.
+
+App image: 372,800 bytes; 81,121 bytes of headroom (the tone build had 245).
+The binary SDK engine is 375 KB of any image and cannot be removed.
 
 Timing uses the board driver's declared 44118 Hz. Actual frequency and duration
 depend on the hardware clock and require measurement. The public nominal rate
@@ -19,7 +37,7 @@ depend on the hardware clock and require measurement. The public nominal rate
 The sine is hard-gated at each boundary; no additional envelope is applied.
 A quarter-wave table (65 entries) keeps SRAM use small: upstream leaves only
 345 bytes of app image headroom, and a full 256-entry table overflows it.
-This build leaves 245 bytes. Further features need space freed elsewhere.
+The appliance build no longer needs that economy, but it keeps the table.
 
 ## Build on Windows x64
 Follow upstream README.md to install JieLi Windows toolchain 2.5.3.
@@ -59,6 +77,12 @@ recovery embedded. Serve it from localhost (Web MIDI needs a secure context):
     python3 -m http.server -b 127.0.0.1 -d build/official-web 8000
 Do not distribute that page until --source-url points at this modified source.
 
+The page's "Play & edit" tab runs web/engine/Simulator.c, a browser build of
+the same app sources: the station display, controls, MASTER and the tone
+itself (the SDK engine is absent and treated as silent). sdk/Simulator.js
+and sdk/Update.html.in are SDK-pinned, so their instrument panels remain
+visible but inert.
+
 ## Host verification
     gcc -std=c11 -Wall -Wextra -Werror -DFM1_HOST_TEST -Isdk/include -Iapp app/audio_output.c tests/tone_host.c -o tone-test
     ./tone-test
@@ -67,7 +91,11 @@ Checks the actual C renderer, including crossing frequency, silence boundaries
 across blocks, amplitude, matching channels, zero master and input isolation.
 These checks do not validate PI32 compilation, timing on hardware or flashing.
 
-Modified: app/audio_output.c, app/audio_output.h
+Modified: app/audio_output.c, app/audio_output.h, app/screen.c, app/project.c,
+app/midi_router.c, app/transfer.c, app/fm_patch.h, web/engine/Simulator.c,
+tools/Build-Web.ps1
+Removed: other app instrument sources, web/engine instrument emulation,
+web/synth, third_party/synth
 Added: tests/tone_host.c, TONE-README.md, tools/build_linux.py,
 tools/linux-toolchain.json
 Retain upstream licensing and SDK notices.
