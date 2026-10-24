@@ -350,10 +350,15 @@ async function ensureAudio() {
 async function openMicrophone() {
   stream?.getTracks().forEach(t => t.stop());
   source?.disconnect();
-  const id = $('microphone').value;
-  stream = await navigator.mediaDevices.getUserMedia({audio: {
-    deviceId: id ? {exact: id} : undefined, channelCount: 1,
+  // The chosen microphone is remembered: opening a Bluetooth headset's mic
+  // (often the default) puts the headset in call mode, so playback through
+  // it turns narrowband even when recording from another microphone.
+  const id = $('microphone').value || localStorageGet('microphone') || '';
+  const open = deviceId => navigator.mediaDevices.getUserMedia({audio: {
+    deviceId: deviceId ? {exact: deviceId} : undefined, channelCount: 1,
     echoCancellation: false, noiseSuppression: false, autoGainControl: false}});
+  try { stream = await open(id); }
+  catch (e) { if (!id || !/Overconstrained|NotFound/.test(e.name)) throw e; stream = await open(''); }
   source = audio.createMediaStreamSource(stream);
   recorder = new AudioWorkletNode(audio, 'capture', {numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1});
   recorder.port.onmessage = event => {
@@ -365,13 +370,17 @@ async function openMicrophone() {
   };
   source.connect(recorder);
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const select = $('microphone'), current = select.value;
+  const select = $('microphone'), inputs = devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default');
   select.replaceChildren(new Option('Default microphone', ''),
-    ...devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default')
-      .map(d => new Option(d.label || 'Microphone', d.deviceId)));
-  select.value = current;
+    ...inputs.map(d => new Option(d.label || 'Microphone', d.deviceId)));
+  // Show the microphone actually in use, not "Default microphone".
+  const actual = stream.getAudioTracks()[0].getSettings().deviceId;
+  select.value = inputs.some(d => d.deviceId === actual) ? actual : '';
 }
-$('microphone').addEventListener('change', () => { if (audio) openMicrophone().catch(e => say(e.message, true)); });
+$('microphone').addEventListener('change', () => {
+  localStorageSet('microphone', $('microphone').value);
+  if (audio) openMicrophone().catch(e => say(e.message, true));
+});
 
 let meterPeak = 0;
 function meter(peak) {
