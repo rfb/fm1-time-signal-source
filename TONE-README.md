@@ -64,16 +64,38 @@ STATION ID QUEUED, until that ID has played. A queued ID waits while the
 clock is unset or no bank is loaded.
 
 ## Speech clips
-speech/clips.tsv lists the announcement vocabulary (English, whole numbers
-0-59, station ID for VA7BFR). tools/speech.py generates placeholder clips
-with Piper text-to-speech (en_US-john-medium, public-domain training data),
-records your own voice, processes clips to 8 kHz and renders a broadcast
-preview of the end of any minute. Generated audio stays under build/.
+Each language has a folder under speech/ (speech/en/ for English); its
+clips.tsv lists the announcement vocabulary (whole numbers 0-59, station ID
+for VA7BFR): id, text, say (text-to-speech pronunciation), gloss (English
+meaning, for other languages). tools/speech.py (--lang, default en)
+generates placeholder clips with Piper text-to-speech (en_US-john-medium,
+public-domain training data), records your own voice, processes clips to
+8 kHz and renders a broadcast preview of the end of any minute. Generated
+audio stays under build/speech/<code>/.
+
+### Clip collector (tools/collector.html)
+A page for recording every clip of a language with a speaker. `build_linux.py
+--web` puts it beside the flasher as build/official-web/collector.html:
+    python3 -m http.server -b 127.0.0.1 -d build/official-web 8000
+    # Chrome or Edge: http://127.0.0.1:8000/collector.html
+Open the repository's speech/ folder. Pick a language, or create one ("New
+language": a folder code such as hax for Xaayda Kil or hdn for Xaad Kil, the
+language name, the speakers' credit and notes, kept in language.json). A new
+language starts with the station's clip ids and the English as each clip's
+gloss; type the words as spoken while recording. Takes are written as
+48 kHz 16-bit WAV to speech/<code>/recordings/<id>.wav (a replaced take moves
+to recordings/previous/). The page shows the speech length and an estimate
+of the bank size, warns about clipping, quiet takes and speech cut at either
+end, and plays a take as the station will (trimmed, 8 kHz). Recordings are
+git-ignored: publish a speaker's voice only with their permission. Then:
+    python3 -I tools/speech.py --lang hax process
+    python3 -I tools/speech.py --lang hax bank
+The firmware still plays one bank, with the English announcement order.
 
 ## Speech bank and announcements (app/speech.c)
     python3 -I tools/speech.py process
-    python3 -I tools/speech.py bank        # build/speech/bank.bin
-    python3 -I tools/station.py upload build/speech/bank.bin
+    python3 -I tools/speech.py bank        # build/speech/en/bank.bin
+    python3 -I tools/station.py upload build/speech/en/bank.bin
 The bank (format in app/speech.h) holds the clips as 8 kHz 4-bit IMA ADPCM
 in the former sample region of user Flash (offset 69632, up to 466944
 bytes; the placeholder bank is 208 KB). Clips are found by name. Upload

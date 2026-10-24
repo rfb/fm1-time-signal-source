@@ -1,0 +1,649 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception -->
+<!-- Speech clip collector for the time-signal station. Records every clip of a
+     language straight into the repository's speech/<code>/recordings/ folder,
+     where tools/speech.py process picks them up. Needs Chrome or Edge on
+     localhost (folder access and the microphone need a secure context):
+       python3 -m http.server -b 127.0.0.1 -d build/official-web 8000
+       http://127.0.0.1:8000/collector.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Collector</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1b; --dim: #6b6a66; --line: #dddbd5;
+  --accent: #0b6e69; --accent-text: #ffffff; --record: #c62828; --warn: #a15c00; --ok: #2e7d32;
+  --wave: #0b6e69; --trim: rgba(11, 110, 105, 0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161716; --panel: #202221; --text: #ecebe7; --dim: #9b9a95; --line: #343633;
+    --accent: #4fb8b0; --accent-text: #0c1514; --record: #ef5350; --warn: #f0a33a; --ok: #66bb6a;
+    --wave: #4fb8b0; --trim: rgba(79, 184, 176, 0.14);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px;
+         border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 17px; margin: 0 12px 0 0; }
+header .spacer { flex: 1; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 12px;
+         cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.record { background: var(--record); color: #fff; border-color: var(--record); min-width: 120px; }
+select, input, textarea { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 5px 8px; }
+kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--dim); }
+main { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 58px); }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } #list { max-height: 40vh; } }
+#list { border-right: 1px solid var(--line); overflow-y: auto; max-height: calc(100vh - 58px); background: var(--panel); }
+#list .summary { padding: 10px 14px; color: var(--dim); font-size: 13px; border-bottom: 1px solid var(--line); }
+#list ol { list-style: none; margin: 0; padding: 0; }
+#list li { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: baseline;
+           padding: 6px 14px; cursor: pointer; border-bottom: 1px solid var(--line); }
+#list li.current { background: var(--trim); }
+#list li .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--dim); }
+#list li.done .dot { background: var(--ok); border-color: var(--ok); }
+#list li .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#list li .name small { color: var(--dim); margin-left: 6px; }
+#list li .length { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+#work { padding: 20px 24px; max-width: 980px; }
+#empty { color: var(--dim); max-width: 640px; }
+.clip-id { color: var(--dim); font: 13px ui-monospace, monospace; }
+#text { width: 100%; font-size: 28px; line-height: 1.3; padding: 8px 10px; resize: vertical; min-height: 64px; }
+#gloss { font-size: 18px; color: var(--dim); margin: 6px 0 0; min-height: 1.4em; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 16px 0; }
+#meter { position: relative; width: 220px; height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; }
+#meter i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ok); }
+#meter i.hot { background: var(--record); }
+canvas { width: 100%; height: 140px; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+#facts { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+#facts .warn { color: var(--warn); }
+#status { min-height: 1.4em; font-size: 13px; color: var(--dim); }
+#status.error { color: var(--record); }
+.hint { color: var(--dim); font-size: 13px; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); max-width: 520px; width: calc(100% - 32px); }
+dialog label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--dim); }
+dialog input, dialog textarea { width: 100%; }
+dialog .row { justify-content: flex-end; margin-bottom: 0; }
+.recording #record-dot { display: inline-block; }
+#record-dot { display: none; width: 10px; height: 10px; border-radius: 50%; background: var(--record); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.2; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Clip Collector</h1>
+  <button id="open" class="primary">Open speech folder…</button>
+  <button id="reopen" hidden>Reopen last folder</button>
+  <select id="language" disabled aria-label="Language"></select>
+  <button id="new-language" disabled>New language…</button>
+  <button id="about" disabled>Language details…</button>
+  <span class="spacer"></span>
+  <select id="microphone" aria-label="Microphone"><option value="">Default microphone</option></select>
+  <div id="meter" title="Input level"><i></i></div>
+</header>
+<main>
+  <nav id="list"><div class="summary" id="summary">No folder open.</div><ol id="clips"></ol></nav>
+  <section id="work">
+    <div id="empty">
+      <p>Open the repository's <code>speech</code> folder. Each language is a folder inside it
+      (<code>en</code>, <code>hax</code>, …) with a <code>clips.tsv</code> listing every clip the station needs.
+      Recordings are written to <code>speech/&lt;code&gt;/recordings/&lt;id&gt;.wav</code>; a replaced take
+      is kept in <code>recordings/previous/</code>.</p>
+      <p>Then run <code>python3 -I tools/speech.py --lang &lt;code&gt; process</code> and <code>bank</code>.</p>
+    </div>
+    <div id="editor" hidden>
+      <div class="clip-id" id="clip-id"></div>
+      <textarea id="text" rows="1" placeholder="What the speaker says, as written in this language"></textarea>
+      <p id="gloss"></p>
+      <div class="row">
+        <button id="record" class="record"><span id="record-dot"></span> Record</button>
+        <button id="play" disabled>Play</button>
+        <button id="broadcast" disabled title="As the station stores it: trimmed, 8 kHz">Play as broadcast</button>
+        <button id="keep" class="primary" disabled>Keep</button>
+        <button id="discard" disabled>Discard take</button>
+        <span class="spacer" style="flex:1"></span>
+        <button id="previous">← Previous</button>
+        <button id="next">Next →</button>
+      </div>
+      <canvas id="wave" width="1800" height="280"></canvas>
+      <p id="facts"></p>
+      <p id="status" role="status"></p>
+      <p class="hint"><kbd>R</kbd> or <kbd>Space</kbd> record / stop · <kbd>P</kbd> play ·
+        <kbd>B</kbd> play as broadcast · <kbd>Enter</kbd> keep and go to the next clip still to record ·
+        <kbd>Esc</kbd> discard · <kbd>↑</kbd> <kbd>↓</kbd> move between clips.
+        Leave a moment of silence before and after speaking; the station trims it.</p>
+    </div>
+  </section>
+</main>
+
+<dialog id="language-dialog">
+  <form method="dialog">
+    <h2 id="language-title" style="margin-top:0">New language</h2>
+    <label for="lang-code">Folder code (ISO 639-3 where there is one, e.g. hax for Xaayda Kil, hdn for Xaad Kil)</label>
+    <input id="lang-code" pattern="[a-z][a-z0-9-]{1,15}" required autocomplete="off">
+    <label for="lang-name">Language name, as its speakers write it</label>
+    <input id="lang-name" required autocomplete="off">
+    <label for="lang-speakers">Speaker(s), as they wish to be credited</label>
+    <input id="lang-speakers" autocomplete="off">
+    <label for="lang-notes">Notes: dialect, permissions agreed, where and when recorded</label>
+    <textarea id="lang-notes" rows="4"></textarea>
+    <p class="hint" id="lang-hint">A new language starts with the station's clip ids. Each clip shows the English
+      as its gloss; type the words as spoken while you record.</p>
+    <div class="row">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button value="save" class="primary" id="lang-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const TRIM_DB = -40, TRIM_PAD_S = 0.015, STATION_RATE = 8000, ADPCM_BYTES_PER_S = STATION_RATE / 2;
+const HEADER = '# id<TAB>text<TAB>say<TAB>gloss: text as spoken; say is for text-to-speech (blank = text);\n' +
+               '# gloss is the English meaning. Ids are the slots the station fills.\n';
+
+let root = null;            // speech/ directory handle
+let language = null;        // {code, dir, lines, clips, info}
+let index = 0;              // current clip
+let audio = null;           // AudioContext
+let stream = null, source = null, recorder = null, chunks = [], recording = false;
+let take = null;            // Float32Array of the take not yet kept
+let shown = null;           // samples on the canvas (take or saved recording)
+let playing = null;
+
+function say(text, error = false) { $('status').textContent = text; $('status').className = error ? 'error' : ''; }
+
+// ---- Folder and languages ----------------------------------------------------
+const store = {
+  db: () => new Promise((resolve, reject) => {
+    const open = indexedDB.open('fm1-collector', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('handles');
+    open.onsuccess = () => resolve(open.result);
+    open.onerror = () => reject(open.error);
+  }),
+  async get(key) {
+    try {
+      const db = await this.db();
+      return await new Promise(resolve => {
+        const r = db.transaction('handles').objectStore('handles').get(key);
+        r.onsuccess = () => resolve(r.result); r.onerror = () => resolve(null);
+      });
+    } catch { return null; }
+  },
+  async set(key, value) {
+    try {
+      const db = await this.db();
+      db.transaction('handles', 'readwrite').objectStore('handles').put(value, key);
+    } catch { /* remembering the folder is a convenience */ }
+  },
+};
+
+async function exists(dir, name) {
+  try { await dir.getFileHandle(name); return true; } catch { return false; }
+}
+async function readText(dir, name) {
+  return (await (await dir.getFileHandle(name)).getFile()).text();
+}
+async function writeFile(dir, name, data) {
+  const handle = await dir.getFileHandle(name, {create: true});
+  const out = await handle.createWritable();
+  await out.write(data);
+  await out.close();
+}
+
+async function useRoot(handle) {
+  if (await exists(handle, 'clips.tsv')) {
+    say('That is a single language folder; open its parent, the speech folder.', true);
+    return;
+  }
+  const codes = [];
+  for await (const [name, entry] of handle.entries())
+    if (entry.kind === 'directory' && await exists(entry, 'clips.tsv')) codes.push(name);
+  if (!codes.length) { say('No language folders with a clips.tsv here; open the repository\'s speech folder.', true); return; }
+  root = handle;
+  await store.set('root', handle);
+  codes.sort((a, b) => (a === 'en' ? -1 : b === 'en' ? 1 : a.localeCompare(b)));
+  const select = $('language');
+  select.replaceChildren(...codes.map(code => new Option(code, code)));
+  const last = localStorageGet('language');
+  select.value = codes.includes(last) ? last : codes[0];
+  for (const id of ['language', 'new-language', 'about']) $(id).disabled = false;
+  $('reopen').hidden = true;
+  await openLanguage(select.value);
+  labelLanguages();
+}
+function localStorageGet(key) { try { return localStorage.getItem('fm1-collector-' + key); } catch { return null; } }
+function localStorageSet(key, value) { try { localStorage.setItem('fm1-collector-' + key, value); } catch { } }
+
+async function labelLanguages() {
+  for (const option of $('language').options) {
+    try {
+      const dir = await root.getDirectoryHandle(option.value);
+      const info = JSON.parse(await readText(dir, 'language.json'));
+      if (info.name) option.textContent = `${info.name} (${option.value})`;
+    } catch { /* no details yet */ }
+  }
+}
+
+function parseTsv(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
+  const clips = [];
+  lines.forEach((line, at) => {
+    if (!line.trim() || line.startsWith('#')) return;
+    const [id, text = '', say = '', gloss = ''] = line.split('\t');
+    clips.push({id, text, say, gloss, line: at, seconds: null, speech: null});
+  });
+  return {lines, clips};
+}
+function formatTsv() {
+  const lines = language.lines.slice();
+  for (const c of language.clips) {
+    const fields = [c.id, c.text, c.say, c.gloss];
+    while (fields.length > 2 && !fields[fields.length - 1]) fields.pop();
+    lines[c.line] = fields.join('\t');
+  }
+  return lines.join('\n') + '\n';
+}
+
+async function openLanguage(code) {
+  stopPlayback();
+  const dir = await root.getDirectoryHandle(code);
+  const {lines, clips} = parseTsv(await readText(dir, 'clips.tsv'));
+  let info = {code, name: '', speakers: '', notes: ''};
+  try { info = {...info, ...JSON.parse(await readText(dir, 'language.json'))}; } catch { }
+  const recordings = await dir.getDirectoryHandle('recordings', {create: true});
+  language = {code, dir, recordings, lines, clips, info};
+  localStorageSet('language', code);
+  $('empty').hidden = true;
+  $('editor').hidden = false;
+  renderList();
+  await Promise.all(clips.map(measureSaved));
+  renderList();
+  const first = clips.findIndex(c => c.seconds === null);
+  await select(first < 0 ? 0 : first);
+}
+
+async function measureSaved(clip) {
+  try {
+    const file = await (await language.recordings.getFileHandle(clip.id + '.wav')).getFile();
+    const {samples, rate} = decodeWav(await file.arrayBuffer());
+    clip.seconds = samples.length / rate;
+    const [a, b] = speechBounds(samples, rate);
+    clip.speech = (b - a) / rate;
+  } catch { clip.seconds = clip.speech = null; }
+}
+
+function renderList() {
+  const list = $('clips');
+  list.replaceChildren(...language.clips.map((c, i) => {
+    const li = document.createElement('li');
+    li.className = (c.seconds !== null ? 'done' : '') + (i === index ? ' current' : '');
+    li.innerHTML = '<span class="dot"></span><span class="name"></span><span class="length"></span>';
+    li.querySelector('.name').textContent = c.text || c.gloss || c.id;
+    if (c.text && c.gloss) li.querySelector('.name').append(Object.assign(document.createElement('small'), {textContent: c.gloss}));
+    li.querySelector('.length').textContent = c.speech !== null ? c.speech.toFixed(2) + ' s' : '';
+    li.onclick = () => select(i);
+    return li;
+  }));
+  const done = language.clips.filter(c => c.seconds !== null);
+  const speech = done.reduce((sum, c) => sum + c.speech, 0);
+  $('summary').textContent = `${language.info.name || language.code}: ${done.length} of ${language.clips.length} recorded · ` +
+    `${speech.toFixed(1)} s of speech ≈ ${Math.round(speech * ADPCM_BYTES_PER_S / 1024)} KiB in the station bank`;
+}
+
+async function select(i) {
+  if (recording) return;
+  stopPlayback();
+  index = Math.max(0, Math.min(language.clips.length - 1, i));
+  take = null;
+  const clip = language.clips[index];
+  $('clip-id').textContent = `${index + 1} / ${language.clips.length} · ${clip.id}`;
+  $('text').value = clip.text;
+  $('gloss').textContent = clip.gloss && clip.gloss !== clip.text ? clip.gloss : '';
+  shown = null;
+  try {
+    const file = await (await language.recordings.getFileHandle(clip.id + '.wav')).getFile();
+    shown = decodeWav(await file.arrayBuffer());
+  } catch { }
+  renderList();
+  document.querySelector('#clips li.current')?.scrollIntoView({block: 'nearest'});
+  draw();
+  update();
+}
+
+let saveTimer = 0;
+$('text').addEventListener('input', () => {
+  language.clips[index].text = $('text').value.replace(/[\t\r\n]+/g, ' ');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveText, 600);
+});
+$('text').addEventListener('blur', () => { clearTimeout(saveTimer); saveText(); });
+async function saveText() {
+  if (!language) return;
+  try { await writeFile(language.dir, 'clips.tsv', formatTsv()); renderList(); }
+  catch (e) { say('Could not save clips.tsv: ' + e.message, true); }
+}
+
+// ---- Audio --------------------------------------------------------------------
+const WORKLET = `registerProcessor('capture', class extends AudioWorkletProcessor {
+  process(inputs) { const x = inputs[0][0]; if (x) this.port.postMessage(x.slice(0)); return true; }
+});`;
+
+async function ensureAudio() {
+  if (!audio) {
+    audio = new AudioContext();
+    const url = URL.createObjectURL(new Blob([WORKLET], {type: 'text/javascript'}));
+    await audio.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+  }
+  if (audio.state !== 'running') await audio.resume();
+  if (!stream) await openMicrophone();
+}
+async function openMicrophone() {
+  stream?.getTracks().forEach(t => t.stop());
+  source?.disconnect();
+  const id = $('microphone').value;
+  stream = await navigator.mediaDevices.getUserMedia({audio: {
+    deviceId: id ? {exact: id} : undefined, channelCount: 1,
+    echoCancellation: false, noiseSuppression: false, autoGainControl: false}});
+  source = audio.createMediaStreamSource(stream);
+  recorder = new AudioWorkletNode(audio, 'capture', {numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1});
+  recorder.port.onmessage = event => {
+    const x = event.data;
+    let peak = 0;
+    for (const v of x) peak = Math.max(peak, Math.abs(v));
+    meter(peak);
+    if (recording) chunks.push(x);
+  };
+  source.connect(recorder);
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const select = $('microphone'), current = select.value;
+  select.replaceChildren(new Option('Default microphone', ''),
+    ...devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default')
+      .map(d => new Option(d.label || 'Microphone', d.deviceId)));
+  select.value = current;
+}
+$('microphone').addEventListener('change', () => { if (audio) openMicrophone().catch(e => say(e.message, true)); });
+
+let meterPeak = 0;
+function meter(peak) {
+  meterPeak = Math.max(peak, meterPeak * 0.9);
+  const db = 20 * Math.log10(Math.max(meterPeak, 1e-5));
+  const bar = $('meter').firstElementChild;
+  bar.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + '%';
+  bar.classList.toggle('hot', meterPeak > 0.89);
+}
+
+async function toggleRecord() {
+  if (!language) return;
+  if (recording) {
+    recording = false;
+    document.body.classList.remove('recording');
+    $('record').lastChild.textContent = ' Record';
+    const n = chunks.reduce((sum, c) => sum + c.length, 0);
+    take = new Float32Array(n);
+    let at = 0;
+    for (const c of chunks) { take.set(c, at); at += c.length; }
+    chunks = [];
+    shown = {samples: take, rate: audio.sampleRate};
+    draw();
+    update();
+    return;
+  }
+  try { await ensureAudio(); } catch (e) { say('Microphone unavailable: ' + e.message, true); return; }
+  stopPlayback();
+  chunks = [];
+  recording = true;
+  document.body.classList.add('recording');
+  $('record').lastChild.textContent = ' Stop';
+  say('Recording…');
+  update();
+}
+
+function stopPlayback() { try { playing?.stop(); } catch { } playing = null; }
+async function play(samples, rate) {
+  if (!audio) { audio = new AudioContext(); }
+  if (audio.state !== 'running') await audio.resume();
+  stopPlayback();
+  const buffer = audio.createBuffer(1, samples.length, rate);
+  buffer.copyToChannel(samples, 0);
+  playing = audio.createBufferSource();
+  playing.buffer = buffer;
+  playing.connect(audio.destination);
+  playing.start();
+}
+// The station's version: trimmed like tools/speech.py process, levelled, then 8 kHz.
+async function broadcast() {
+  if (!shown) return;
+  const {samples, rate} = shown;
+  const [a, b] = speechBounds(samples, rate);
+  if (b <= a) return;
+  const trimmed = samples.slice(a, b);
+  const offline = new OfflineAudioContext(1, Math.ceil(trimmed.length * STATION_RATE / rate), STATION_RATE);
+  const buffer = offline.createBuffer(1, trimmed.length, rate);
+  buffer.copyToChannel(trimmed, 0);
+  const node = offline.createBufferSource();
+  node.buffer = buffer;
+  node.connect(offline.destination);
+  node.start();
+  const low = (await offline.startRendering()).getChannelData(0);
+  let peak = 0;
+  for (const v of low) peak = Math.max(peak, Math.abs(v));
+  const gain = Math.min(10 ** (-1 / 20) / Math.max(peak, 1e-6), 8);
+  await play(low.map(v => v * gain), STATION_RATE);
+}
+
+async function keep() {
+  if (!take || recording) return;
+  const clip = language.clips[index];
+  try {
+    if (await exists(language.recordings, clip.id + '.wav')) {
+      const previous = await language.recordings.getDirectoryHandle('previous', {create: true});
+      const old = await (await language.recordings.getFileHandle(clip.id + '.wav')).getFile();
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      await writeFile(previous, `${clip.id}-${stamp}.wav`, old);
+    }
+    await writeFile(language.recordings, clip.id + '.wav', encodeWav(take, audio.sampleRate));
+    await saveText();
+  } catch (e) { say('Could not save: ' + e.message, true); return; }
+  await measureSaved(clip);
+  say(`Saved recordings/${clip.id}.wav`);
+  take = null;
+  const next = language.clips.findIndex((c, i) => i > index && c.seconds === null);
+  const wrap = language.clips.findIndex(c => c.seconds === null);
+  await select(next >= 0 ? next : wrap >= 0 ? wrap : index);
+  if (next < 0 && wrap < 0) say(`Every clip of ${language.info.name || language.code} is recorded.`);
+}
+function discard() {
+  if (!take || recording) return;
+  take = null;
+  select(index);
+  say('Take discarded.');
+}
+
+// ---- Analysis and drawing -------------------------------------------------------
+// Same rule as tools/speech.py trim: 10 ms RMS above -40 dB of the loudest, 15 ms pad.
+function speechBounds(x, rate) {
+  const w = Math.max(1, Math.round(rate / 100));
+  const energy = new Float32Array(x.length);
+  let sum = 0, max = 0;
+  for (let i = 0; i < x.length; i++) {
+    sum += x[i] * x[i];
+    if (i >= w) sum -= x[i - w] * x[i - w];
+    energy[i] = Math.sqrt(Math.max(sum, 0) / w);
+    max = Math.max(max, energy[i]);
+  }
+  const threshold = max * 10 ** (TRIM_DB / 20);
+  let a = -1, b = -1;
+  for (let i = 0; i < x.length; i++) if (energy[i] > threshold) { if (a < 0) a = i; b = i; }
+  if (a < 0 || max === 0) return [0, 0];
+  const pad = Math.round(rate * TRIM_PAD_S);
+  const half = Math.round(w / 2); // trailing window: centre it like speech.py
+  return [Math.max(0, a - half - pad), Math.min(x.length, b - half + pad)];
+}
+
+function draw() {
+  const canvas = $('wave'), g = canvas.getContext('2d');
+  const css = getComputedStyle(document.documentElement);
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  if (!shown) {
+    g.fillStyle = css.getPropertyValue('--dim');
+    g.font = '28px system-ui';
+    g.fillText(recording ? 'Recording…' : 'Not recorded yet', 24, canvas.height / 2);
+    return;
+  }
+  const {samples, rate} = shown, n = samples.length, w = canvas.width, h = canvas.height;
+  const [a, b] = speechBounds(samples, rate);
+  g.fillStyle = css.getPropertyValue('--trim');
+  g.fillRect(a / n * w, 0, (b - a) / n * w, h);
+  g.fillStyle = css.getPropertyValue('--wave');
+  for (let x = 0; x < w; x++) {
+    let peak = 0;
+    for (let i = Math.floor(x / w * n), end = Math.floor((x + 1) / w * n); i < end; i++) peak = Math.max(peak, Math.abs(samples[i]));
+    const y = peak * h / 2;
+    g.fillRect(x, h / 2 - y, 1, Math.max(1, 2 * y));
+  }
+}
+
+function update() {
+  const has = !!shown;
+  $('play').disabled = $('broadcast').disabled = !has || recording;
+  $('keep').disabled = $('discard').disabled = !take || recording;
+  $('previous').disabled = $('next').disabled = recording;
+  const facts = $('facts');
+  facts.replaceChildren();
+  if (!shown) return;
+  const {samples, rate} = shown;
+  let peak = 0;
+  for (const v of samples) peak = Math.max(peak, Math.abs(v));
+  const [a, b] = speechBounds(samples, rate);
+  const peakDb = 20 * Math.log10(Math.max(peak, 1e-9));
+  const notes = [`${take ? 'New take' : 'Saved'}: ${(samples.length / rate).toFixed(2)} s`,
+                 `speech ${((b - a) / rate).toFixed(2)} s`, `peak ${peakDb.toFixed(1)} dBFS`];
+  const warnings = [];
+  if (peak >= 0.99) warnings.push('clipped: move back or lower the input gain');
+  else if (peakDb < -30) warnings.push('very quiet: move closer or raise the input gain');
+  if (b - a <= 0) warnings.push('no speech found');
+  else {
+    if (a < rate * 0.05) warnings.push('speech starts at the very beginning; it may be cut');
+    if (samples.length - b < rate * 0.05) warnings.push('speech runs to the very end; it may be cut');
+  }
+  facts.append(notes.join(' · '));
+  for (const w of warnings) facts.append(' · ', Object.assign(document.createElement('span'), {className: 'warn', textContent: w}));
+}
+
+// ---- WAV --------------------------------------------------------------------------
+function encodeWav(x, rate) {
+  const data = new DataView(new ArrayBuffer(44 + x.length * 2));
+  const text = (at, s) => [...s].forEach((c, i) => data.setUint8(at + i, c.charCodeAt(0)));
+  text(0, 'RIFF'); data.setUint32(4, 36 + x.length * 2, true); text(8, 'WAVE');
+  text(12, 'fmt '); data.setUint32(16, 16, true); data.setUint16(20, 1, true); data.setUint16(22, 1, true);
+  data.setUint32(24, rate, true); data.setUint32(28, rate * 2, true); data.setUint16(32, 2, true); data.setUint16(34, 16, true);
+  text(36, 'data'); data.setUint32(40, x.length * 2, true);
+  for (let i = 0; i < x.length; i++) data.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, x[i])) * 32767), true);
+  return new Blob([data.buffer], {type: 'audio/wav'});
+}
+// 16-bit PCM only: what this page and tools/speech.py record.
+function decodeWav(buffer) {
+  const d = new DataView(buffer);
+  let at = 12, rate = 0, channels = 1, bits = 16;
+  while (at + 8 <= d.byteLength) {
+    const id = String.fromCharCode(d.getUint8(at), d.getUint8(at + 1), d.getUint8(at + 2), d.getUint8(at + 3));
+    const size = d.getUint32(at + 4, true);
+    if (id === 'fmt ') { channels = d.getUint16(at + 10, true); rate = d.getUint32(at + 12, true); bits = d.getUint16(at + 22, true); }
+    if (id === 'data') {
+      if (bits !== 16) throw new Error('not 16-bit PCM');
+      const frames = Math.floor(Math.min(size, d.byteLength - at - 8) / 2 / channels);
+      const samples = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) samples[i] = d.getInt16(at + 8 + i * 2 * channels, true) / 32768;
+      return {samples, rate};
+    }
+    at += 8 + size + (size & 1);
+  }
+  throw new Error('no audio data');
+}
+
+// ---- Language details ---------------------------------------------------------------
+function languageDialog(creating) {
+  $('language-title').textContent = creating ? 'New language' : 'Language details';
+  $('lang-code').disabled = !creating;
+  $('lang-hint').hidden = !creating;
+  const info = creating ? {code: '', name: '', speakers: '', notes: ''} : language.info;
+  $('lang-code').value = info.code; $('lang-name').value = info.name;
+  $('lang-speakers').value = info.speakers; $('lang-notes').value = info.notes;
+  $('language-dialog').returnValue = '';
+  $('language-dialog').showModal();
+  $('language-dialog').onclose = async () => {
+    if ($('language-dialog').returnValue !== 'save') return;
+    const info = {code: $('lang-code').value.trim(), name: $('lang-name').value.trim(),
+                  speakers: $('lang-speakers').value.trim(), notes: $('lang-notes').value.trim()};
+    try {
+      if (creating) await createLanguage(info);
+      else {
+        await writeFile(language.dir, 'language.json', JSON.stringify(info, null, 2) + '\n');
+        language.info = info;
+        renderList();
+      }
+      await labelLanguages();
+    } catch (e) { say(e.message, true); }
+  };
+}
+async function createLanguage(info) {
+  if (!/^[a-z][a-z0-9-]{1,15}$/.test(info.code)) throw new Error('Use a short lowercase folder code, e.g. hax.');
+  try { await root.getDirectoryHandle(info.code); throw new Error(`speech/${info.code} already exists.`); }
+  catch (e) { if (e.name !== 'NotFoundError') throw e; }
+  // Start from the current language's ids, with its text as the gloss.
+  const ids = language.clips.map(c => [c.id, '', '', c.gloss || c.text].join('\t'));
+  const dir = await root.getDirectoryHandle(info.code, {create: true});
+  await writeFile(dir, 'clips.tsv', `# Station speech clips, ${info.name || info.code}.\n` + HEADER + ids.join('\n') + '\n');
+  await writeFile(dir, 'language.json', JSON.stringify(info, null, 2) + '\n');
+  $('language').append(new Option(info.code, info.code));
+  $('language').value = info.code;
+  await openLanguage(info.code);
+}
+
+// ---- Wiring ---------------------------------------------------------------------------
+$('open').onclick = async () => {
+  if (!window.showDirectoryPicker) { say('This page needs Chrome or Edge, served from localhost.', true); return; }
+  try { await useRoot(await showDirectoryPicker({id: 'fm1-speech', mode: 'readwrite'})); }
+  catch (e) { if (e.name !== 'AbortError') say(e.message, true); }
+};
+$('reopen').onclick = async () => {
+  const handle = await store.get('root');
+  if (handle && await handle.requestPermission({mode: 'readwrite'}) === 'granted') await useRoot(handle);
+};
+$('language').onchange = () => openLanguage($('language').value).catch(e => say(e.message, true));
+$('new-language').onclick = () => languageDialog(true);
+$('about').onclick = () => languageDialog(false);
+$('record').onclick = toggleRecord;
+$('play').onclick = () => shown && play(shown.samples, shown.rate);
+$('broadcast').onclick = () => broadcast().catch(e => say(e.message, true));
+$('keep').onclick = keep;
+$('discard').onclick = discard;
+$('previous').onclick = () => select(index - 1);
+$('next').onclick = () => select(index + 1);
+document.addEventListener('keydown', event => {
+  if (!language || event.ctrlKey || event.metaKey || event.altKey || $('language-dialog').open) return;
+  const typing = /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement?.tagName);
+  if (typing) { if (event.key === 'Escape') document.activeElement.blur(); return; }
+  const actions = {r: toggleRecord, ' ': toggleRecord, p: () => $('play').click(), b: () => $('broadcast').click(),
+                   Enter: keep, Escape: discard, ArrowUp: () => select(index - 1), ArrowDown: () => select(index + 1)};
+  const action = actions[event.key.length === 1 ? event.key.toLowerCase() : event.key];
+  if (action && !event.repeat) { event.preventDefault(); action(); }
+});
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+(async () => {
+  if (await store.get('root')) $('reopen').hidden = false;
+  draw();
+})();
+</script>
+</body>
+</html>

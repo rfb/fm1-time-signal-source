@@ -4,7 +4,7 @@
  *   python3 -I tools/speech.py bank
  *   gcc -std=c11 -Wall -Wextra -Werror -DFM1_HOST_TEST -Isdk/include -Iapp \
  *       app/clock.c app/speech.c tests/speech_host.c -o speech-test
- *   ./speech-test build/speech */
+ *   ./speech-test build/speech/en */
 #include "speech.h"
 #include "fm1_device.h"
 #include <assert.h>
@@ -73,9 +73,9 @@ int main(int argc, char **argv)
 {
     char path[512];
     long size, reference_bytes;
-    snprintf(path, sizeof path, "%s/bank.bin", argc > 1 ? argv[1] : "build/speech");
+    snprintf(path, sizeof path, "%s/bank.bin", argc > 1 ? argv[1] : "build/speech/en");
     uint8_t *bank = load(path, &size);
-    snprintf(path, sizeof path, "%s/bank_reference_1432.raw", argc > 1 ? argv[1] : "build/speech");
+    snprintf(path, sizeof path, "%s/bank_reference_1432.raw", argc > 1 ? argv[1] : "build/speech/en");
     int16_t *reference = (int16_t *)load(path, &reference_bytes);
     unsigned reference_frames = (unsigned)(reference_bytes / 2);
 

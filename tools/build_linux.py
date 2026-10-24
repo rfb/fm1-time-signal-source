@@ -602,7 +602,9 @@ def build_web(wasi_sdk, source_url, release_version, product):
         fail('Unexpanded HTML placeholder.')
     output.parent.mkdir(parents=True, exist_ok=True)
     write_text(output, web)
-    write_text(sums, f'{sha256(output)}  {output.name}\n')
+    collector = output.parent / 'collector.html'
+    collector.write_bytes((ROOT / 'tools' / 'collector.html').read_bytes())
+    write_text(sums, f'{sha256(output)}  {output.name}\n{sha256(collector)}  {collector.name}\n')
     write_json(BUILD / 'web-package-report.json', {
         'integrated': True, 'firmware_sha256': package['sha256'], 'web_sha256': sha256(output),
         'release_version': release_version, 'build_id': build_id, 'simulator_sha256': simulation['sha256'],
@@ -636,7 +638,8 @@ def main():
     for name in ('sdk.elf', 'sdk.map', 'build-identity.json', 'compile_commands.json', 'link-arguments.json',
                  'generated/FM1_OFFICIAL_OPEN.fw', 'generated/FM1_OFFICIAL_OPEN.fwsc'):
         (BUILD / name).unlink(missing_ok=True)
-    for name in ('official-web/FM1-Official-Open-Source.html', 'official-web/SHA256SUMS.txt'):
+    for name in ('official-web/FM1-Official-Open-Source.html', 'official-web/collector.html',
+                 'official-web/SHA256SUMS.txt'):
         (ROOT / 'build' / name).unlink(missing_ok=True)
 
     version_h = (ROOT / 'app' / 'version.h').read_text()

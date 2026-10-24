@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception
 """Speech clip harness for the time-signal station.
 
-speech/clips.tsv lists every clip. Sources, in order of preference:
-speech/recordings/<id>.wav (your voice, from `record`) and
-build/speech/tts/<id>.wav (placeholders from `synth`).
+Each language has a folder, speech/<code>/ (--lang, default en), whose
+clips.tsv lists every clip. Sources, in order of preference:
+speech/<code>/recordings/<id>.wav (a speaker's voice, from `record` or the
+collector page, tools/collector.html) and build/speech/<code>/tts/<id>.wav
+(placeholders from `synth`).
 
     python3 -I tools/speech.py synth --piper <venv python> --voice-dir <dir>
     python3 -I tools/speech.py record --device default
@@ -14,11 +16,11 @@ build/speech/tts/<id>.wav (placeholders from `synth`).
     python3 -I tools/speech.py status
 
 `process` trims silence, matches loudness and resamples to the station's
-8 kHz mono 16-bit format in build/speech/clips/. `preview` renders the end
+8 kHz mono 16-bit format in build/speech/<code>/clips/. `preview` renders the end
 of the minute before HH:MM as broadcast: standard tone, second ticks with
 their protected zones, the announcement at second 52.5 and the minute or
 hour marker. `bank` encodes the processed clips as the station's speech bank
-(app/speech.h) in build/speech/bank.bin, plus a reference rendering that
+(app/speech.h) in build/speech/<code>/bank.bin, plus a reference rendering that
 tests/speech_host.c compares with the firmware player. Requires numpy and
 scipy; `record` also needs arecord.
 """
@@ -30,10 +32,18 @@ from scipy.io import wavfile
 from scipy.signal import resample_poly
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / 'speech' / 'clips.tsv'
-RECORDINGS = ROOT / 'speech' / 'recordings'
-OUT = ROOT / 'build' / 'speech'
-TTS, CLIPS = OUT / 'tts', OUT / 'clips'
+
+
+def use_language(code):
+    """Point the harness at speech/<code>/ and build/speech/<code>/."""
+    global MANIFEST, RECORDINGS, OUT, TTS, CLIPS
+    MANIFEST = ROOT / 'speech' / code / 'clips.tsv'
+    RECORDINGS = ROOT / 'speech' / code / 'recordings'
+    OUT = ROOT / 'build' / 'speech' / code
+    TTS, CLIPS = OUT / 'tts', OUT / 'clips'
+
+
+use_language('en')
 CLIP_RATE = 8000           # stored speech rate
 PREVIEW_RATE = 44100
 SPEECH_RMS_DB = -20.0      # active-speech loudness target
@@ -47,8 +57,10 @@ def clips():
         if not line.strip() or line.startswith('#'):
             continue
         fields = line.split('\t')
-        entries.append({'id': fields[0], 'text': fields[1],
-                        'say': fields[2] if len(fields) > 2 and fields[2] else fields[1]})
+        text = fields[1] if len(fields) > 1 else ''
+        entries.append({'id': fields[0], 'text': text,
+                        'say': fields[2] if len(fields) > 2 and fields[2] else text,
+                        'gloss': fields[3] if len(fields) > 3 else ''})
     return entries
 
 
@@ -113,7 +125,7 @@ def record(args):
     for index, clip in enumerate(todo, 1):
         path = RECORDINGS / f"{clip['id']}.wav"
         while True:
-            print(f"\n[{index}/{len(todo)}] {clip['id']}:  {clip['text']}")
+            print(f"\n[{index}/{len(todo)}] {clip['id']}:  {clip['text'] or clip['gloss']}")
             if input('Enter to start recording (q to quit): ').strip().lower() == 'q':
                 return
             process = subprocess.Popen(['arecord', '-q', '-D', args.device, '-f', 'S16_LE', '-c', '1',
@@ -358,6 +370,7 @@ def status(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--lang', default='en', help='language folder under speech/, e.g. en or hax')
     commands = parser.add_subparsers(dest='command', required=True)
     p = commands.add_parser('synth', help='generate placeholder clips with Piper')
     p.add_argument('--piper', default=os.environ.get('FM1_PIPER_PYTHON'),
@@ -377,6 +390,9 @@ def main():
     commands.add_parser('bank', help='encode processed clips as the station speech bank')
     commands.add_parser('status', help='list clips and their sources')
     args = parser.parse_args()
+    if not (ROOT / 'speech' / args.lang / 'clips.tsv').is_file():
+        sys.exit(f'error: speech/{args.lang}/clips.tsv not found')
+    use_language(args.lang)
     if args.command == 'synth' and (not args.piper or not args.voice_dir):
         sys.exit('error: set --piper and --voice-dir (or FM1_PIPER_PYTHON and FM1_PIPER_VOICES)')
     {'synth': synth, 'record': record, 'process': process, 'preview': preview, 'bank': bank,

@@ -6,7 +6,7 @@
     python3 -I tools/station.py query
     python3 -I tools/station.py offset -8:48
     python3 -I tools/station.py rate 44117.66
-    python3 -I tools/station.py upload build/speech/bank.bin
+    python3 -I tools/station.py upload build/speech/en/bank.bin
 
 `sync` sends this host's UTC time of day; keep the host NTP-synchronized.
 Protocol: app/transfer.c. The device is found by name in /proc/asound/cards.

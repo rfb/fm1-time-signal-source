@@ -1,4 +1,5 @@
-# Station speech clips. id<TAB>text<TAB>say (pronunciation for text-to-speech; blank = text).
+# Station speech clips, English. id<TAB>text<TAB>say<TAB>gloss: say is the pronunciation for
+# text-to-speech (blank = text); gloss is an English meaning, for other languages.
 # Edit text freely; ids are used by the announcement scheduler.
 # Haida is given as raw phonemes [[ hˈaɪdɐ ]] (HY-da): espeak reads "Haida" as HAY-duh,
 # and "Hyda" ends in a schwa that this voice makes sound like "Hyder".
