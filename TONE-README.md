@@ -58,6 +58,10 @@ selects UTC input, left local input (the entry converts, same instant).
 SAVE accepts: the clock is set to the entered time, at .000, at that
 moment, so dial a few seconds ahead and press on the beat. HOME cancels. EDIT stays lit
 while the clock is unset.
+The first note key queues an extra station ID at the next :02.03 at least half a second
+away (press again to cancel); it stays lit, and the status line reads
+STATION ID QUEUED, until that ID has played. A queued ID waits while the
+clock is unset or no bank is loaded.
 
 ## Speech clips
 speech/clips.tsv lists the announcement vocabulary (English, whole numbers
@@ -81,7 +85,8 @@ The audio ISR decodes from the mapped partition and resamples to the
 board rate.
 - "At the tone, H hour(s), M minute(s), Haida Standard Time." for the
   next minute marker, starting at :52.5 every minute.
-- Station identification (VA7BFR) at :02.03 of minutes 00 and 30.
+- Station identification (VA7BFR) at :02.03 of minutes 00 and 30, and
+  of the next minute after the first note key is pressed.
 Nothing is announced while the clock is unset. Speech pauses in the tick
 protected zones, like WWV.
 
@@ -90,7 +95,7 @@ The instrument UI, projects, presets, DX7 factory voices, voice library,
 sample bank, MIDI routing and workbench file transfers are removed. The SDK
 engine still runs and calls the app entry points; they are inert:
 - app/screen.c: status display (tone state, uptime, MASTER level, audio
-  overruns), MASTER knob, PLAY LED lit during the tone.
+  overruns), MASTER knob.
 - app/transfer.c: application SysEx hook, ignored for now; computer time
   setting will arrive here. Firmware updates are handled by the SDK first.
 - app/midi_router.c: sends no MIDI. app/project.c: no storage; turns

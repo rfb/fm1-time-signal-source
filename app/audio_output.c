@@ -21,7 +21,6 @@ struct second_plan { uint32_t marker, tone; unsigned tick, zone_after, zone_befo
 static struct second_plan plan;
 static uint32_t phase;
 static unsigned output_gain;
-static volatile unsigned tone_on;
 /* Quarter sine, 0..90 degrees: a quarter of the audio SRAM of a full table. */
 static const int16_t quarter_sine[65] FM1_AUDIO_DATA = {
     0, 804, 1608, 2410, 3212, 4011, 4808, 5602,
@@ -81,7 +80,6 @@ void fm1_output_reset(void)
     output_gain = 0;
     phase = 0;
 }
-unsigned fm1_output_tone(void) { return tone_on; }
 FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
 {
     if (!output) return;
@@ -131,6 +129,5 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
         output[2*i] = output[2*i+1] = sample;
         ++frame;
     }
-    tone_on = plan.tone || (plan.marker && frame < MARKER_FRAMES);
     (void)fm1_usb_audio_write(output, FM1_BLOCK_FRAMES);
 }

@@ -124,6 +124,8 @@ FM1_AUDIO_CODE void speech_block(const struct clock_position *at, int16_t out[FM
 static unsigned state = SPEECH_NONE, count;
 static uint32_t total, position;
 static uint32_t armed_local, armed_frame;
+/* Panel request; armed answering one; armed only because of one. */
+static unsigned id_request, id_armed, id_extra;
 
 static uint32_t crc32(uint32_t crc, const uint8_t *p, uint32_t n)
 {
@@ -253,15 +255,26 @@ int speech_finish(void)
 /* Events in milliseconds into a local minute, and their start frames. */
 enum { ANNOUNCE_MS = 52500, ANNOUNCE_FRAME = 22059,  /* :52.5 */
        ID_MS = 2030, ID_FRAME = 1324,                /* after the :02 tick's protected zone */
-       ARM_AHEAD_MS = 1500 };
+       ARM_AHEAD_MS = 1500, REQUEST_MARGIN_MS = 500 };
 static uint32_t gap_frames(unsigned ms) { return ms * 44118U / 1000U; }
 static void add(unsigned clip, unsigned gap_ms)
 {
     playlist.clip[playlist.count] = (uint8_t)clip;
     playlist.gap[playlist.count++] = gap_frames(gap_ms);
 }
+void speech_queue_id(int queue)
+{
+    if (!queue && id_extra && slot == ARMED) {
+        ++withdraw;
+        armed_local = CLOCK_DAY; /* a new request may take the same slot */
+    }
+    id_request = queue ? 1U : 0U;
+    if (!queue) id_armed = id_extra = 0;
+}
+unsigned speech_id_queued(void) { return id_request || id_armed; }
 void speech_poll(void)
 {
+    if (id_armed && slot == FREE) id_armed = id_extra = 0;
     if (state != SPEECH_READY || !bank) return;
     struct clock_time now;
     clock_read(&now);
@@ -270,26 +283,35 @@ void speech_poll(void)
     uint32_t minute_start = local - local % 60U, ms = (local % 60U) * 1000U + now.ms;
     uint32_t minute = local / 60U % 60U;
     /* The next event, in ms from the start of this minute: the announcement
-     * at :52.5 every minute, the station ID at :02 of minutes 00 and 30. */
+     * at :52.5 every minute, the station ID at :02 of minutes 00 and 30,
+     * or of the next minute that can still make it when one is requested. */
     uint32_t event = ms < ANNOUNCE_MS ? ANNOUNCE_MS : 60000U + ANNOUNCE_MS;
-    unsigned id = 0;
+    unsigned id = 0, scheduled = 0;
     for (uint32_t ahead = 0; ahead < 2; ++ahead) {
         uint32_t candidate = ahead * 60000U + ID_MS;
-        if ((minute + ahead) % 30U == 0 && candidate > ms && candidate < event) { event = candidate; id = 1; }
+        /* A new request needs a margin; one already armed keeps its slot. */
+        unsigned regular = (minute + ahead) % 30U == 0;
+        unsigned due = regular || id_extra ? candidate > ms
+                                           : id_request && candidate >= ms + REQUEST_MARGIN_MS;
+        if (due && candidate < event) { event = candidate; id = 1; scheduled = regular; }
     }
     uint32_t wait = event - ms;
     uint32_t start = (minute_start + event / 1000U) % CLOCK_DAY;
     uint32_t frame = id ? ID_FRAME : ANNOUNCE_FRAME;
     if (slot == ARMED && (playlist.start_local != start || playlist.start_frame != frame)) {
         ++withdraw; /* the clock moved: drop the stale announcement */
+        if (id_armed) { id_request = 1; id_armed = id_extra = 0; }
         return;
     }
     if (slot != FREE || wait > ARM_AHEAD_MS || (armed_local == start && armed_frame == frame))
         return;
     playlist.count = 0;
-    if (id)
+    if (id) {
         add(SPEECH_STATION_ID, 0);
-    else {
+        id_armed = id_request; /* a scheduled ID also answers a request */
+        id_extra = id_request && !scheduled;
+        id_request = 0;
+    } else {
         uint32_t marker = (start + 8U) % CLOCK_DAY; /* time at the tone: the next :00 */
         unsigned hour = marker / 3600U, minutes = marker / 60U % 60U;
         add(SPEECH_AT_THE_TONE, 250);

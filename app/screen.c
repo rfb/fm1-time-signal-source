@@ -3,14 +3,15 @@
  * UTC time, synchronization, master level and audio health, and feeds the
  * MASTER knob to the engine's output gain. Control task only. */
 #include "instrument.h"
-#include "audio_output.h"
 #include "clock.h"
+#include "speech.h"
 #include "fm1_engine_control.h"
 #include <string.h>
 
 enum { BACK = 0x0000, TEXT = 0xef5d, ACCENT = 0x07ff, DIM = 0x738e, GREEN = 0x07e0, AMBER = 0xfd20 };
 /* Panel button, LED and encoder numbers (see sdk/Simulator.js faceplate). */
-enum { EDIT_BUTTON = 6, HOME_BUTTON = 8, SAVE_BUTTON = 9, PLAY_LED = 12, LEDS = 41, BAND_ROWS = 16 };
+enum { EDIT_BUTTON = 6, HOME_BUTTON = 8, SAVE_BUTTON = 9, LEDS = 41, BAND_ROWS = 16 };
+enum { ID_KEY = 0, KEY_LED = 14 }; /* first note key; key LEDs follow the buttons */
 enum { HOUR_KNOB = 2, MINUTE_KNOB = 3, SECOND_KNOB = 4, ZONE_KNOB = 5 };
 #define BUTTON(b) (1U << (b))
 /* Five columns per glyph, bit 0 at the top. Digits followed by uppercase. */
@@ -36,7 +37,7 @@ static uint16_t band[FM1_SCREEN_WIDTH * BAND_ROWS];
 static char shown[LINES][21];
 static uint16_t shown_color[LINES];
 static uint32_t last_ms, carry_ms, seconds, synced_at;
-static unsigned led_on, edit_led, sync_count, previous_buttons, setting, input_utc;
+static unsigned edit_led, id_led, sync_count, previous_buttons, previous_keys, setting, input_utc;
 static uint32_t entered; /* SET TIME entry: second of day in the input zone */
 
 static const uint8_t *glyph(char c)
@@ -81,7 +82,7 @@ void groove_screen_init(void)
 {
     fm1_controls_init();
     for (unsigned key = 0; key < LEDS; ++key) fm1_led_set(key, 0);
-    led_on = edit_led = setting = input_utc = 0;
+    edit_led = id_led = setting = input_utc = 0;
     fm1_screen_init();
     fm1_screen_fill(0, 0, FM1_SCREEN_WIDTH, FM1_SCREEN_HEIGHT, BACK);
     memset(shown, 0, sizeof shown);
@@ -91,6 +92,7 @@ void groove_screen_init(void)
     struct fm1_controls controls;
     fm1_controls_read(&controls);
     previous_buttons = controls.buttons;
+    previous_keys = controls.keys;
 }
 /* Append HH:MM:SS of a second of day. */
 static char *clock_text(char *out, uint32_t second)
@@ -134,6 +136,8 @@ void groove_screen_control(void)
     (void)groove_master_update(controls.knob);
     unsigned pressed = controls.buttons & ~previous_buttons;
     previous_buttons = controls.buttons;
+    unsigned struck = controls.keys & ~previous_keys;
+    previous_keys = controls.keys;
 
     /* Uptime for the sync age; the millisecond clock wraps after 49 days. */
     uint32_t now = fm1_millis();
@@ -142,9 +146,6 @@ void groove_screen_control(void)
     seconds += carry_ms / 1000U;
     carry_ms %= 1000U;
     if (clock_set_count() != sync_count) { sync_count = clock_set_count(); synced_at = seconds; }
-
-    unsigned tone = fm1_output_tone();
-    if (tone != led_on) { fm1_led_set(PLAY_LED, (int)tone); led_on = tone; }
 
     struct clock_time time;
     clock_read(&time);
@@ -176,6 +177,11 @@ void groove_screen_control(void)
             input_utc = utc;
         }
     }
+    /* The first note key queues a station ID at the next :02, or cancels
+     * it; lit until it has played. */
+    if (!setting && (struck & (1U << ID_KEY))) speech_queue_id(!speech_id_queued());
+    unsigned queued = speech_id_queued();
+    if (queued != id_led) { fm1_led_set(KEY_LED + ID_KEY, (int)queued); id_led = queued; }
     /* EDIT stays lit while the clock is unset, prompting SET TIME. */
     unsigned prompt = !setting && !time.set;
     if (prompt != edit_led) { fm1_led_set(EDIT_BUTTON, (int)prompt); edit_led = prompt; }
@@ -230,6 +236,8 @@ void groove_screen_control(void)
         memcpy(text, "OVERRUNS ", 9);
         decimal(text + 9, dma.overruns, 1);
         line(HEALTH, text, AMBER);
-    } else
+    } else if (queued)
+        line(HEALTH, "STATION ID QUEUED", GREEN);
+    else
         line(HEALTH, "AUDIO OK", DIM);
 }

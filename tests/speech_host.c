@@ -2,7 +2,9 @@
 /* Plays a bank from tools/speech.py through app/speech.c and compares the
  * announcement with the tool's reference rendering, sample for sample:
  *   python3 -I tools/speech.py bank
- *   gcc ... app/clock.c app/speech.c tests/speech_host.c && ./speech-test build/speech */
+ *   gcc -std=c11 -Wall -Wextra -Werror -DFM1_HOST_TEST -Isdk/include -Iapp \
+ *       app/clock.c app/speech.c tests/speech_host.c -o speech-test
+ *   ./speech-test build/speech */
 #include "speech.h"
 #include "fm1_device.h"
 #include <assert.h>
@@ -38,6 +40,27 @@ static uint8_t *load(const char *path, long *size)
     assert(p && fread(p, 1, (size_t)*size, f) == (size_t)*size);
     fclose(f);
     return p;
+}
+/* Run the station for seconds from now, recording voice; returns the frame
+ * where second `mark` starts, at `offset` frames into it. */
+static unsigned run(int16_t *voice, unsigned seconds, unsigned mark, unsigned offset, unsigned *frames)
+{
+    unsigned length = CLOCK_RATE_DEFAULT / 1000, carry = 0, total = 0, at = 0;
+    for (unsigned s = 0; s < seconds; s++) {
+        if (s == mark) at = total + offset;
+        total += length;
+        carry += CLOCK_RATE_DEFAULT % 1000; length = CLOCK_RATE_DEFAULT / 1000;
+        if (carry >= 1000) { carry -= 1000; ++length; }
+    }
+    memset(voice, 0, (total + FM1_BLOCK_FRAMES) * sizeof *voice);
+    for (unsigned n = 0; n < total; n += FM1_BLOCK_FRAMES) {
+        speech_poll();
+        struct clock_position position;
+        clock_block(&position);
+        speech_block(&position, voice + n);
+    }
+    *frames = total;
+    return at;
 }
 static int upload(const uint8_t *bank, long size)
 {
@@ -124,6 +147,42 @@ int main(int argc, char **argv)
     unsigned id_last = 0;
     for (unsigned i = id; i < seconds_total; i++) if (voice[i]) id_last = i;
     assert(id_last > id + 5 * 44118); /* the station ID plays */
+    /* A queued ID plays at the next :02 that can still make it: queued at
+     * 14:33:58, it starts at 14:34:02.03 and the LED state clears after. */
+    unsigned frames;
+    run(voice, 5, 0, 0, &frames); /* let the ID above finish */
+    clock_set((23 * 3600 + 21 * 60 + 58) * 1000U);
+    speech_queue_id(1);
+    assert(speech_id_queued());
+    unsigned queued = run(voice, 16, 4, 1324, &frames);
+    for (unsigned i = 0; i < queued; i++) assert(!voice[i]);
+    unsigned queued_last = 0;
+    for (unsigned i = queued; i < frames; i++) if (voice[i]) queued_last = i;
+    assert(queued_last > queued + 5 * 44118 && queued_last + 44118 < frames);
+    speech_poll();
+    assert(!speech_id_queued());
+    /* Not repeated next minute: 14:35:00 to :10 is silent. */
+    clock_set((23 * 3600 + 23 * 60) * 1000U);
+    run(voice, 10, 0, 0, &frames);
+    for (unsigned i = 0; i < frames; i++) assert(!voice[i]);
+    /* Cancelled after it was armed (14:36:01): nothing plays. */
+    clock_set((23 * 3600 + 23 * 60 + 58) * 1000U);
+    speech_queue_id(1);
+    run(voice, 3, 0, 0, &frames);
+    speech_queue_id(0);
+    assert(!speech_id_queued());
+    run(voice, 8, 0, 0, &frames);
+    for (unsigned i = 0; i < frames; i++) assert(!voice[i]);
+    /* Queued again in the same minute, it still takes that :02. */
+    clock_set((23 * 3600 + 25 * 60 + 58) * 1000U);
+    speech_queue_id(1);
+    run(voice, 3, 0, 0, &frames);
+    speech_queue_id(0);
+    speech_queue_id(1);
+    queued = run(voice, 9, 1, 1324, &frames);
+    for (unsigned i = 0; i < queued; i++) assert(!voice[i]);
+    assert(voice[queued + 2000] || voice[queued + 4000]);
+    printf("PASS: queued station ID at the next :02.03, once; cancel withdraws it\n");
     printf("PASS: hour rollover announcement %.2f s, station ID at :02.03 for %.2f s\n",
            (last - announce) / 44118.0, (id_last - id) / 44118.0);
     printf("PASS: bank upload/validation, announcement for 14:32 at :52.5, %u frames identical to reference\n",

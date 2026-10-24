@@ -31,6 +31,10 @@ enum { SPEECH_NONE, SPEECH_CHECKING, SPEECH_READY, SPEECH_UPLOADING, SPEECH_ERRO
 void speech_init(void);   /* (re)load and validate the bank from Flash */
 void speech_poll(void);   /* validation steps and the announcement schedule */
 unsigned speech_state(void);
+/* An extra station ID at the next :02 of a minute; 0 cancels. Queued stays
+ * true until that ID has finished playing. */
+void speech_queue_id(int queue);
+unsigned speech_id_queued(void);
 unsigned speech_count(void);
 uint32_t speech_bytes(void);
 /* Upload: begin erases as it goes; finish validates, then commits. 0 ok. */
