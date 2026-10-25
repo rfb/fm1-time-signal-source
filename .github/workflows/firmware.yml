@@ -1,0 +1,115 @@
+# Builds the station firmware and its update page with JieLi's Linux toolchain,
+# publishes the page on GitHub Pages from the default branch, and attaches the
+# build to a release for v* tags. All upstream image checks stay enabled.
+name: Firmware
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WASI_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
+  WASI_SHA256: b7d4d944c88503e4f21d84af07ac293e3440b1b6210bfd7fe78e0afd92c23bc2
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain pins
+        id: pins
+        run: |
+          echo "jieli_url=$(jq -r .archive tools/linux-toolchain.json)" >> "$GITHUB_OUTPUT"
+          echo "jieli_sha256=$(jq -r .archive_sha256 tools/linux-toolchain.json)" >> "$GITHUB_OUTPUT"
+          echo "jieli_release=$(jq -r .release tools/linux-toolchain.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache toolchain archives
+        uses: actions/cache@v4
+        with:
+          path: ~/toolchain-archives
+          key: toolchains-${{ steps.pins.outputs.jieli_sha256 }}-${{ env.WASI_SHA256 }}
+
+      - name: Fetch and verify toolchains
+        env:
+          JIELI_URL: ${{ steps.pins.outputs.jieli_url }}
+          JIELI_SHA256: ${{ steps.pins.outputs.jieli_sha256 }}
+        run: |
+          mkdir -p ~/toolchain-archives && cd ~/toolchain-archives
+          [ -f jieli.tar.xz ] || curl -fsSL --retry 3 -o jieli.tar.xz "$JIELI_URL"
+          [ -f wasi.tar.gz ] || curl -fsSL --retry 3 -o wasi.tar.gz "$WASI_URL"
+          printf '%s  jieli.tar.xz\n%s  wasi.tar.gz\n' "$JIELI_SHA256" "$WASI_SHA256" | sha256sum -c
+          tar -xJf jieli.tar.xz -C "$RUNNER_TEMP"
+          tar -xzf wasi.tar.gz -C "$RUNNER_TEMP"
+
+      - name: Host checks
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -DFM1_HOST_TEST -Isdk/include -Iapp \
+            app/audio_output.c app/clock.c app/speech.c tests/tone_host.c -o "$RUNNER_TEMP/tone-test"
+          "$RUNNER_TEMP/tone-test"
+
+      - name: Build firmware and update page
+        run: |
+          python3 -I tools/build_linux.py \
+            --toolchain "$RUNNER_TEMP/${{ steps.pins.outputs.jieli_release }}" \
+            --web --wasi-sdk "$RUNNER_TEMP/wasi-sdk-27.0-x86_64-linux" \
+            --source-url "https://github.com/${{ github.repository }}/tree/${{ github.sha }}"
+
+      - name: Assemble site
+        run: |
+          mkdir site
+          cp build/official-web/* build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/
+          (cd site && sha256sum FM1_OFFICIAL_OPEN.fwsc >> SHA256SUMS.txt)
+          sed -e "s|@REPOSITORY@|${{ github.repository }}|g" -e "s|@COMMIT@|${{ github.sha }}|g" \
+            tools/pages-index.html > site/index.html
+          cat site/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fm1-time-signal-${{ github.sha }}
+          path: site/
+
+      - if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  pages:
+    needs: build
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: fm1-time-signal-${{ github.sha }}
+          path: site
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --generate-notes \
+            site/FM1_OFFICIAL_OPEN.fwsc site/FM1-Official-Open-Source.html site/collector.html site/SHA256SUMS.txt

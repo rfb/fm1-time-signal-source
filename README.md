@@ -1,5 +1,7 @@
 # FM1 time-signal source
 
+[![Firmware](https://github.com/rfb/fm1-time-signal-source/actions/workflows/firmware.yml/badge.svg)](https://github.com/rfb/fm1-time-signal-source/actions/workflows/firmware.yml)
+
 An M-VAVE FM1 synthesizer repurposed as a WWV-style time-signal station that
 feeds an AM/SSB transmitter, keeping Haida Standard Time (UTC−08:48) for
 amateur station VA7BFR.
@@ -139,6 +141,20 @@ tab no longer has a device protocol to talk to.
 
 App image: 379,996 bytes, about 74 KB of headroom. A quarter-wave sine table
 (65 entries) is kept from the tone build, when upstream left only 345 bytes.
+
+## CI and GitHub Pages
+.github/workflows/firmware.yml builds every push and pull request on
+ubuntu-24.04: it fetches the pinned JieLi toolchain and WASI SDK 27 (checking
+their SHA-256), runs the tone host check, and builds the firmware and update
+page with `--source-url` set to the commit. Each run keeps the firmware,
+update page, collector and SHA256SUMS as an artifact. Pushes to the default
+branch publish them on GitHub Pages, so the latest build can be flashed from
+the browser:
+
+https://rfb.github.io/fm1-time-signal-source/
+
+Pushing a `v*` tag also attaches them to a GitHub release. The speech host
+check needs a recorded bank, so it runs locally only.
 
 ## Build on Linux x64
 JieLi publishes a Linux toolchain with the same clang 4.0.1 release (its

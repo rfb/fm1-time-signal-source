@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception -->
+<!-- Landing page for the GitHub Pages site the CI workflow publishes beside the
+     update page and the clip collector. @COMMIT@ and @REPOSITORY@ are filled
+     in by .github/workflows/firmware.yml. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FM1 Time-Signal Source</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1b; --dim: #6b6a66; --line: #dddbd5;
+  --accent: #0b6e69; --accent-text: #ffffff; --warn: #a15c00;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161716; --panel: #202221; --text: #ecebe7; --dim: #9b9a95; --line: #343633;
+    --accent: #4fb8b0; --accent-text: #0c1514; --warn: #f0a33a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 32px 16px 48px; }
+h1 { font-size: 24px; margin: 0 0 8px; }
+p { margin: 0 0 14px; }
+.dim { color: var(--dim); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 20px 0; }
+.card { display: block; padding: 16px; border: 1px solid var(--line); border-radius: 8px;
+        background: var(--panel); color: inherit; text-decoration: none; }
+.card:hover { border-color: var(--accent); }
+.card strong { display: block; font-size: 16px; margin-bottom: 4px; color: var(--accent); }
+.card span { color: var(--dim); font-size: 14px; }
+.note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel); margin: 20px 0; }
+.note ul { margin: 6px 0 0; padding-left: 20px; }
+code { font: 13px ui-monospace, monospace; }
+a { color: var(--accent); }
+footer { margin-top: 28px; font-size: 13px; color: var(--dim); overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+<h1>FM1 Time-Signal Source</h1>
+<p>An M-VAVE FM1 synthesizer repurposed as a WWV-style time-signal station for an AM/SSB
+transmitter, keeping Haida Standard Time (UTC−08:48) for amateur station VA7BFR: second
+ticks, minute markers, standard tones, and a spoken announcement each minute.</p>
+
+<div class="cards">
+  <a class="card" href="FM1-Official-Open-Source.html">
+    <strong>Flash firmware</strong>
+    <span>Update page with this build embedded, plus a simulator of the station panel.</span>
+  </a>
+  <a class="card" href="collector.html">
+    <strong>Clip collector</strong>
+    <span>Record a language's announcement clips into a local checkout's <code>speech/</code> folder.</span>
+  </a>
+</div>
+
+<div class="note">
+  <strong>Before flashing</strong>
+  <ul>
+    <li>Back up any data on the device; firmware defects may cause data loss.</li>
+    <li>Use Chrome or Edge (Web MIDI) with the FM1 connected over USB.</li>
+    <li>Afterwards, set the clock with <code>tools/station.py sync</code> and upload a speech
+      bank with <code>tools/station.py upload</code> if the station has none.</li>
+  </ul>
+</div>
+
+<p>Downloads: <a href="FM1_OFFICIAL_OPEN.fwsc">FM1_OFFICIAL_OPEN.fwsc</a> ·
+<a href="SHA256SUMS.txt">SHA256SUMS.txt</a></p>
+
+<footer>
+Built by GitHub Actions from
+<a href="https://github.com/@REPOSITORY@/tree/@COMMIT@">@REPOSITORY@ at @COMMIT@</a>.
+Station firmware: GPLv3 with the FM1 SDK linking exception, no warranty. The SDK engine and
+firmware resources have separate terms, shown in the update page's notices.
+</footer>
+</main>
+</body>
+</html>
