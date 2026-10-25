@@ -213,7 +213,10 @@ The page's "Play & edit" tab runs web/engine/Simulator.c, a browser build of
 the same app sources: the station display, controls, MASTER and the signal
 (the SDK engine is absent and treated as silent). sdk/Simulator.js and
 sdk/Update.html.in are SDK-pinned, so their instrument panels remain visible
-but inert.
+but inert. The build appends tools/sim-clock.js to the page: when the
+simulator's sound starts it sets the station clock from the browser's UTC
+time (and the rate to the simulator's 44100 Hz) over the station's SysEx,
+and again every five minutes.
 
 ## Build on Windows x64
 Not yet tried with this source. Install JieLi Windows toolchain 2.5.3 as the

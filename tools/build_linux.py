@@ -615,6 +615,8 @@ def build_web(wasi_sdk, source_url, release_version, product, sim_bank=None):
         web = web.replace(key, value)
     if re.search(r'/\*FM1_[A-Z_]+\*/', web):
         fail('Unexpanded HTML placeholder.')
+    # Ours, appended after the SDK-pinned template: sets the simulator's clock.
+    web += '\n<script>\n' + (ROOT / 'tools' / 'sim-clock.js').read_text(encoding='utf-8') + '</script>\n'
     output.parent.mkdir(parents=True, exist_ok=True)
     write_text(output, web)
     collector = output.parent / 'collector.html'
