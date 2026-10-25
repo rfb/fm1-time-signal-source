@@ -2,6 +2,9 @@
 
 [![Firmware](https://github.com/rfb/fm1-time-signal-source/actions/workflows/firmware.yml/badge.svg)](https://github.com/rfb/fm1-time-signal-source/actions/workflows/firmware.yml)
 
+**[Try it in your browser →](https://rfb.github.io/fm1-time-signal-source/)** Flash the latest
+build to an FM1, or play with the station in the simulator.
+
 An M-VAVE FM1 synthesizer repurposed as a WWV-style time-signal station that
 feeds an AM/SSB transmitter, keeping Haida Standard Time (UTC−08:48) for
 amateur station VA7BFR.
