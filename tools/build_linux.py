@@ -516,7 +516,7 @@ STOCK_SHA256 = 'db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a
 STOCK_LOADER_SHA256 = 'ef1f2db89b011fa53e71df363f0122de0ea896618c53fb53e8da676322004541'
 
 
-def build_simulator(wasi_sdk):
+def build_simulator(wasi_sdk, sim_bank=None):
     compiler = wasi_sdk / 'bin' / 'clang'
     sysroot = wasi_sdk / 'share' / 'wasi-sysroot'
     if not compiler.is_file() or not sysroot.is_dir():
@@ -532,15 +532,30 @@ def build_simulator(wasi_sdk):
     for name in ['tools/Build-Web.ps1'] + ['sdk/include/' + p.name for p in sorted((SDK / 'include').glob('*.h'))]:
         inputs[name] = sha256(ROOT / name)
     names = sorted(inputs)  # ordinal, as Build-Web.ps1
-    source_hash = hashlib.sha256('\n'.join(f'{n}:{inputs[n]}' for n in names).encode('utf-8')).hexdigest()
     out = ROOT / 'build' / 'web'
     out.mkdir(parents=True, exist_ok=True)
+    bank_inc = out / 'sim_bank.inc'
+    bank_inc.unlink(missing_ok=True)
+    hashed = names
+    if sim_bank:
+        # A speech bank preloaded into the simulator's flash, which the
+        # SDK-pinned page has no way to load.
+        bank = sim_bank.read_bytes()
+        if bank[:4] != b'HSTS' or len(bank) > 466944:
+            fail(f'{sim_bank} is not a station speech bank.')
+        rows = (','.join(str(b) for b in bank[i:i + 32]) for i in range(0, len(bank), 32))
+        write_text(bank_inc, 'static const unsigned char sim_bank[] = {\n' + ',\n'.join(rows) + '\n};\n')
+        inputs['sim_bank'] = sha256(sim_bank)
+        hashed = sorted(inputs)
+    source_hash = hashlib.sha256('\n'.join(f'{n}:{inputs[n]}' for n in hashed).encode('utf-8')).hexdigest()
     wasm = out / 'simulator.wasm'
     wasm.unlink(missing_ok=True)
     options = ['--sysroot=' + str(sysroot), '-std=c11', '-O2', '-fwrapv', '-fno-fast-math', '-ffp-contract=off',
                '-DFM1_HOST_TEST', '-DFM1_OPEN_WEB', '-Wall', '-Wextra', '-Werror',
                '-Wno-unused-function', '-Wno-array-parameter', '-mexec-model=reactor']
     options += ['-I' + str(ROOT / n) for n in ('web/engine', 'sdk/include', 'app/synth', 'app')]
+    if sim_bank:
+        options += ['-DFM1_SIM_BANK', '-I' + str(out)]
     options += [str(ROOT / n) for n in names if n.endswith('.c') and not n.startswith('sdk/')]
     options += ['-Wl,--strip-all', '-Wl,-z,stack-size=131072', '-Wl,--initial-memory=4194304',
                 '-Wl,--max-memory=33554432', '-o', str(wasm)]
@@ -549,7 +564,7 @@ def build_simulator(wasi_sdk):
     return wasm, source_hash
 
 
-def build_web(wasi_sdk, source_url, release_version, product):
+def build_web(wasi_sdk, source_url, release_version, product, sim_bank=None):
     import base64, html
     if not re.match(r'https://[^\s@/]+/', source_url or '') or re.search(r'[\r\n]', source_url):
         fail('--source-url must be an HTTPS source URL without credentials.')
@@ -571,7 +586,7 @@ def build_web(wasi_sdk, source_url, release_version, product):
                'release_version': release_version, 'build_id': build_id, 'sha256': sha256(package_file),
                'bytes': len(package_bytes), 'loader_sha256': sha256(SDK / 'tools' / 'pack' / 'ota.bin'),
                'hardware_validated': False, 'data': base64.b64encode(package_bytes).decode(), 'stock': stock}
-    wasm, source_hash = build_simulator(wasi_sdk)
+    wasm, source_hash = build_simulator(wasi_sdk, sim_bank)
     simulation = {'schema': 1, 'release_version': release_version, 'sha256': sha256(wasm), 'source_sha256': source_hash,
                   'sample_bank': 'synthesized-demo', 'data': base64.b64encode(wasm.read_bytes()).decode()}
     notices = [f'APP: GPLv3 with the FM1 SDK linking exception; no warranty. SDK and firmware resources have separate '
@@ -623,6 +638,8 @@ def main():
                         help='extracted WASI SDK 27 directory, for --web')
     parser.add_argument('--source-url', default=os.environ.get('FM1_SOURCE_URL'),
                         help='HTTPS URL of the matching source, shown in the page notices, for --web')
+    parser.add_argument('--sim-bank',
+                        help='speech bank (tools/speech.py bank) to preload into the simulator, for --web')
     args = parser.parse_args()
     if not args.toolchain:
         fail('Set --toolchain or FM1_PI32_TOOLCHAIN_LINUX to the extracted JieLi Linux toolchain.')
@@ -775,7 +792,8 @@ def main():
     package_firmware(tools, product)
     print(f'Firmware: {BUILD / "generated" / "FM1_OFFICIAL_OPEN.fwsc"}')
     if args.web:
-        build_web(Path(args.wasi_sdk).resolve(), args.source_url, release_version, product)
+        build_web(Path(args.wasi_sdk).resolve(), args.source_url, release_version, product,
+                  Path(args.sim_bank).resolve() if args.sim_bank else None)
 
 
 if __name__ == '__main__':

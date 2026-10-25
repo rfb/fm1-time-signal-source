@@ -16,6 +16,10 @@ permissions:
 env:
   WASI_URL: https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
   WASI_SHA256: b7d4d944c88503e4f21d84af07ac293e3440b1b6210bfd7fe78e0afd92c23bc2
+  PIPER_VOICE: en_US-john-medium
+  PIPER_VOICE_URL: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/john/medium
+  PIPER_VOICE_SHA256: 789c6c875726e627ddee93d51d8727859abe9c091c3d141591f4b83c2072e988
+  PIPER_CONFIG_SHA256: af60f177b6b550f3d7a302720c0fb89e7f94a82b5dca464775ef63b1c69ba09a
 
 jobs:
   build:
@@ -54,18 +58,46 @@ jobs:
             app/audio_output.c app/clock.c app/speech.c tests/tone_host.c -o "$RUNNER_TEMP/tone-test"
           "$RUNNER_TEMP/tone-test"
 
+      - name: Cache Piper voice
+        uses: actions/cache@v6
+        with:
+          path: ~/piper-voices
+          key: piper-${{ env.PIPER_VOICE }}-${{ env.PIPER_VOICE_SHA256 }}
+
+      # Recordings stay private, so CI speaks with Piper's placeholder voice.
+      - name: Speech bank (Piper text-to-speech) and player check
+        run: |
+          mkdir -p ~/piper-voices && cd ~/piper-voices
+          base="$PIPER_VOICE_URL/$PIPER_VOICE"
+          [ -f "$PIPER_VOICE.onnx" ] || curl -fsSL --retry 3 -o "$PIPER_VOICE.onnx" "$base.onnx"
+          [ -f "$PIPER_VOICE.onnx.json" ] || curl -fsSL --retry 3 -o "$PIPER_VOICE.onnx.json" "$base.onnx.json"
+          printf '%s  %s\n%s  %s\n' "$PIPER_VOICE_SHA256" "$PIPER_VOICE.onnx" \
+            "$PIPER_CONFIG_SHA256" "$PIPER_VOICE.onnx.json" | sha256sum -c
+          cd "$GITHUB_WORKSPACE"
+          python3 -m venv "$RUNNER_TEMP/piper"
+          "$RUNNER_TEMP/piper/bin/pip" install --quiet piper-tts==1.8.0 numpy scipy
+          py="$RUNNER_TEMP/piper/bin/python"
+          "$py" -I tools/speech.py synth --piper "$py" --voice-dir ~/piper-voices --voice "$PIPER_VOICE"
+          "$py" -I tools/speech.py process
+          "$py" -I tools/speech.py bank
+          gcc -std=c11 -Wall -Wextra -Werror -DFM1_HOST_TEST -Isdk/include -Iapp \
+            app/clock.c app/speech.c tests/speech_host.c -o "$RUNNER_TEMP/speech-test"
+          "$RUNNER_TEMP/speech-test" build/speech/en
+
       - name: Build firmware and update page
         run: |
           python3 -I tools/build_linux.py \
             --toolchain "$RUNNER_TEMP/${{ steps.pins.outputs.jieli_release }}" \
             --web --wasi-sdk "$RUNNER_TEMP/wasi-sdk-27.0-x86_64-linux" \
-            --source-url "https://github.com/${{ github.repository }}/tree/${{ github.sha }}"
+            --source-url "https://github.com/${{ github.repository }}/tree/${{ github.sha }}" \
+            --sim-bank build/speech/en/bank.bin
 
       - name: Assemble site
         run: |
           mkdir site
           cp build/official-web/* build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc site/
-          (cd site && sha256sum FM1_OFFICIAL_OPEN.fwsc >> SHA256SUMS.txt)
+          cp build/speech/en/bank.bin site/speech-bank-en.bin
+          (cd site && sha256sum FM1_OFFICIAL_OPEN.fwsc speech-bank-en.bin >> SHA256SUMS.txt)
           sed -e "s|@REPOSITORY@|${{ github.repository }}|g" -e "s|@COMMIT@|${{ github.sha }}|g" \
             tools/pages-index.html > site/index.html
           cat site/SHA256SUMS.txt
@@ -112,4 +144,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --generate-notes \
-            site/FM1_OFFICIAL_OPEN.fwsc site/FM1-Official-Open-Source.html site/collector.html site/SHA256SUMS.txt
+            site/FM1_OFFICIAL_OPEN.fwsc site/speech-bank-en.bin site/FM1-Official-Open-Source.html site/collector.html site/SHA256SUMS.txt

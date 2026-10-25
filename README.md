@@ -153,7 +153,7 @@ App image: 379,996 bytes, about 74 KB of headroom. A quarter-wave sine table
 ## CI and GitHub Pages
 .github/workflows/firmware.yml builds every push and pull request on
 ubuntu-24.04: it fetches the pinned JieLi toolchain and WASI SDK 27 (checking
-their SHA-256), runs the tone host check, and builds the firmware and update
+their SHA-256), runs the host checks, and builds the firmware and update
 page with `--source-url` set to the commit. Each run keeps the firmware,
 update page, collector and SHA256SUMS as an artifact. Pushes to the default
 branch publish them on GitHub Pages, so the latest build can be flashed from
@@ -161,8 +161,11 @@ the browser:
 
 https://rfb.github.io/fm1-time-signal-source/
 
-Pushing a `v*` tag also attaches them to a GitHub release. The speech host
-check needs a recorded bank, so it runs locally only.
+Pushing a `v*` tag also attaches them to a GitHub release. Recordings are
+not in the repository, so CI speaks with Piper: it synthesizes the clips
+(en_US-john-medium, pinned by SHA-256), builds the bank, runs the speech host
+check on it, preloads it into the page's simulator, and publishes it as
+`speech-bank-en.bin`, ready for `tools/station.py upload`.
 
 ## Build on Linux x64
 JieLi publishes a Linux toolchain with the same clang 4.0.1 release (its
@@ -193,7 +196,9 @@ python3 -I tools/build_linux.py --toolchain <jieli> --web \
 ```
 
 Output: build/official-web/FM1-Official-Open-Source.html (with stock V15
-recovery embedded) and the clip collector. Without --web, previous pages are
+recovery embedded) and the clip collector. `--sim-bank build/speech/en/bank.bin`
+preloads a speech bank into the simulator, which otherwise stays silent: the
+SDK-pinned page cannot load one. Without --web, previous pages are
 removed. Serve them from localhost (Web MIDI needs a secure context):
 
 ```sh
@@ -233,8 +238,9 @@ gcc -std=c11 -Wall -Wextra -Werror -DFM1_HOST_TEST -Isdk/include -Iapp \
 tone_host checks the actual C renderer: markers, ticks, protected zones, the
 tone schedule, levels, muted master and input isolation. speech_host checks
 the scheduler, the queued station ID and bank upload against the built
-English bank (build/speech/en). These do not validate PI32 compilation,
-timing on hardware or flashing.
+English bank (build/speech/en).
+
+These do not validate PI32 compilation, timing on hardware or flashing.
 
 ## License
 APP: [GPLv3 with the FM1 SDK linking exception](LICENSE.md). The device engine is supplied as a binary SDK with separate terms. Retain the applicable [SDK terms, third-party licenses and contributor notices](THIRD_PARTY.md) when distributing builds.

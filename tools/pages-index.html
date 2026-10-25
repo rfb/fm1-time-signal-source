@@ -49,7 +49,8 @@ ticks, minute markers, standard tones, and a spoken announcement each minute.</p
 <div class="cards">
   <a class="card" href="FM1-Official-Open-Source.html">
     <strong>Flash firmware</strong>
-    <span>Update page with this build embedded, plus a simulator of the station panel.</span>
+    <span>Update page with this build embedded, plus a simulator of the station panel.
+      In the simulator, press EDIT, dial the time and press SAVE to hear it speak.</span>
   </a>
   <a class="card" href="collector.html">
     <strong>Clip collector</strong>
@@ -62,13 +63,17 @@ ticks, minute markers, standard tones, and a spoken announcement each minute.</p
   <ul>
     <li>Back up any data on the device; firmware defects may cause data loss.</li>
     <li>Use Chrome or Edge (Web MIDI) with the FM1 connected over USB.</li>
-    <li>Afterwards, set the clock with <code>tools/station.py sync</code> and upload a speech
-      bank with <code>tools/station.py upload</code> if the station has none.</li>
+    <li>Afterwards, set the clock with <code>tools/station.py sync</code>. If the station has no
+      speech bank, upload one: <code>tools/station.py upload speech-bank-en.bin</code>.</li>
   </ul>
 </div>
 
 <p>Downloads: <a href="FM1_OFFICIAL_OPEN.fwsc">FM1_OFFICIAL_OPEN.fwsc</a> ·
+<a href="speech-bank-en.bin">speech-bank-en.bin</a> ·
 <a href="SHA256SUMS.txt">SHA256SUMS.txt</a></p>
+<p class="dim">The speech bank is English in a placeholder text-to-speech voice (Piper
+en_US-john-medium, trained on public-domain recordings), built from this commit's
+<code>speech/en/clips.tsv</code>.</p>
 
 <footer>
 Built by GitHub Actions from
