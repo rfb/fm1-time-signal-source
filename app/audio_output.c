@@ -20,6 +20,7 @@ enum {
 struct second_plan { uint32_t marker, tone; unsigned tick, zone_after, zone_before; };
 static struct second_plan plan;
 static uint32_t phase;
+static unsigned tone_held; /* speech in this second: no standard tone */
 static unsigned output_gain;
 /* Quarter sine, 0..90 degrees: a quarter of the audio SRAM of a full table. */
 static const int16_t quarter_sine[65] FM1_AUDIO_DATA = {
@@ -94,7 +95,7 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
     (void)fm1_bluetooth_audio_read(bluetooth_pcm, FM1_BLOCK_FRAMES);
     struct clock_position at;
     clock_block(&at);
-    speech_block(&at, voice);
+    unsigned spoken = speech_block(&at, voice);
     uint32_t frame = at.frame, length = at.length, local = at.local;
     plan_second(local);
     for (unsigned i = 0; i < FM1_BLOCK_FRAMES; ++i) {
@@ -103,12 +104,15 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
             length = at.next_length;
             local = local + 1U == CLOCK_DAY ? 0 : local + 1U;
             plan_second(local);
+            tone_held = 0;
         }
+        if (i < spoken) tone_held = 1;
         if (!frame) phase = 0;
         /* Ticks and markers about -12 dBFS, standard tones -18 dBFS, speech
          * peaks near -1 dBFS (clips are levelled to -20 dBFS RMS), at full
-         * MASTER. Speech and tones never share a second, and both pause in
-         * the protected zones. Products fit int32_t. */
+         * MASTER. A second with speech in it (an ID queued into a tone
+         * minute) drops its tone, and both pause in the protected zones.
+         * Products fit int32_t. */
         int32_t sample = 0;
         unsigned zone = (plan.zone_after && frame < ZONE_AFTER) ||
                         (plan.zone_before && length - frame <= ZONE_BEFORE);
@@ -122,7 +126,7 @@ FM1_AUDIO_CODE void fm1_output_mix(int32_t *output)
             /* protected zone: silence */
         } else if (voice[i]) {
             sample = voice[i] * (int32_t)output_gain * 2;
-        } else if (plan.tone) {
+        } else if (plan.tone && !tone_held) {
             sample = (sine(phase) * (int32_t)output_gain) / 4;
             phase += plan.tone;
         }

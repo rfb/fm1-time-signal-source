@@ -89,9 +89,10 @@ static inline __attribute__((always_inline)) int32_t next_sample(const uint8_t *
     begin_item(base);
     return 0;
 }
-FM1_AUDIO_CODE void speech_block(const struct clock_position *at, int16_t out[FM1_BLOCK_FRAMES])
+FM1_AUDIO_CODE unsigned speech_block(const struct clock_position *at, int16_t out[FM1_BLOCK_FRAMES])
 {
     const uint8_t *base = bank;
+    unsigned played = 0;
     uint32_t local = at->local, frame = at->frame, length = at->length;
     if (withdraw != withdraw_seen) {
         withdraw_seen = withdraw;
@@ -115,9 +116,15 @@ FM1_AUDIO_CODE void speech_block(const struct clock_position *at, int16_t out[FM
             begin_item(base);
             slot = PLAYING;
         }
-        out[i] = (int16_t)(slot == PLAYING ? next_sample(base) : 0);
+        if (slot == PLAYING) {
+            out[i] = (int16_t)next_sample(base);
+            played = i + 1;
+        } else {
+            out[i] = 0;
+        }
         ++frame;
     }
+    return played;
 }
 
 /* Control: bank validation and upload. */

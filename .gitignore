@@ -30,3 +30,4 @@ id_ed25519
 /.codex-sinco/
 # Speakers' recordings stay local unless deliberately published (with permission).
 /speech/*/recordings/
+__pycache__/

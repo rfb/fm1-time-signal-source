@@ -43,6 +43,7 @@ int speech_write(uint32_t offset, const uint8_t *data, unsigned bytes);
 int speech_finish(void);
 
 /* Audio ISR, once per block: speech samples (Q15) for the block starting at
- * position, 0 where silent. */
-FM1_AUDIO_CODE void speech_block(const struct clock_position *at, int16_t out[FM1_BLOCK_FRAMES]);
+ * position, 0 where silent. Returns the frames up to the end of playback in
+ * this block (0 when nothing played), gaps between clips included. */
+FM1_AUDIO_CODE unsigned speech_block(const struct clock_position *at, int16_t out[FM1_BLOCK_FRAMES]);
 #endif
