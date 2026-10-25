@@ -6,6 +6,11 @@ An M-VAVE FM1 synthesizer repurposed as a WWV-style time-signal station that
 feeds an AM/SSB transmitter, keeping Haida Standard Time (UTC−08:48) for
 amateur station VA7BFR.
 
+Haida Standard Time is a fictional, proposed time zone: local mean time at
+132°W, near the geographic centre of Haida Gwaii. 132° at four minutes per
+degree puts it 8 hours 48 minutes behind UTC. It is not an official time zone;
+Haida Gwaii keeps Pacific Time.
+
 To give Haida Standard Time a voice on the air, starting in English and
 built to carry Xaayda Kil announcements recorded with a Haida speaker.
 
